@@ -1,7 +1,7 @@
 """
-Playlists de custom:autoradio-card, gardées côté HA pour être les mêmes sur tous les appareils.
+Playlists de custom:neon-media-card, gardées côté HA pour être les mêmes sur tous les appareils.
 
-pyscript.autoradio_playlists(op, ...) avec return_response :
+pyscript.neon_media_playlists(op, ...) avec return_response :
   op="get"                      -> {"lists": [...]}
   op="put",  list={id, name, rev, tracks}  -> {"ok": True, "list": ...} ou {"ok": False, "list": <version en place>}
   op="delete", id=...           -> {"ok": True}
@@ -12,7 +12,7 @@ au lieu d'écraser la modification faite ailleurs.
 
 import threading
 
-STORE = "/config/autoradio_playlists.json"
+STORE = "/config/neon_media_playlists.json"
 MAX_LISTS = 100
 MAX_TRACKS = 2000
 MAX_TEXT = 300
@@ -78,10 +78,10 @@ def _run(op, data, lock):
 
 
 @service(supports_response="only")
-def autoradio_playlists(op="get", id=None, list=None):
+def neon_media_playlists(op="get", id=None, list=None):
     """yaml
-name: Playlists de l'autoradio
-description: Lit, enregistre ou supprime les playlists de custom:autoradio-card.
+name: Playlists de Neon Media
+description: Lit, enregistre ou supprime les playlists de custom:neon-media-card.
 fields:
   op:
     description: get, put ou delete
@@ -94,5 +94,5 @@ fields:
     try:
         return _run(op, {"id": id, "list": list}, _lock)
     except Exception as e:
-        log.warning("autoradio_playlists %s : %s", op, e)
+        log.warning("neon_media_playlists %s : %s", op, e)
         return {"ok": False, "error": str(e)}

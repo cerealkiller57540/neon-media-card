@@ -1,10 +1,10 @@
 """
-Index de la bibliothèque musicale pour custom:autoradio-card.
+Index de la bibliothèque musicale pour custom:neon-media-card.
 
 Le navigateur ne peut parcourir /media qu'un dossier à la fois (media_source/browse_media),
 ce qui plafonne la carte à 80 dossiers / 1000 titres. Ce script parcourt le disque côté
 serveur et écrit un seul fichier que la carte charge d'un coup :
-  /config/www/autoradio-card/index.json (+ .gz, servi compressé par HA si le navigateur l'accepte)
+  /config/www/neon-media-card/index.json (+ .gz, servi compressé par HA si le navigateur l'accepte)
 Il régénère aussi la liste des préréglages d'égaliseur (eq/index.json) : HTTP ne liste pas un dossier.
 
 Format (v1) : {"v":1, "root": id media-source de ROOT_DIR, "generated": ISO, "count": n,
@@ -24,8 +24,8 @@ import time
 
 ROOT_DIR = "/media"
 ROOT_ID = "media-source://media_source/local"
-OUT = "/config/www/autoradio-card/index.json"
-EQ_DIR = "/config/www/autoradio-card/eq"
+OUT = "/config/www/neon-media-card/index.json"
+EQ_DIR = "/config/www/neon-media-card/eq"
 
 AUDIO_EXT = {".mp3", ".flac", ".ogg", ".oga", ".opus", ".m4a", ".aac", ".wav", ".webm"}
 LIST_EXT = {".m3u", ".m3u8"}
@@ -113,29 +113,29 @@ async def _run(origin):
     try:
         r = await _build_index()
     except Exception as e:
-        log.error(f"autoradio_index ({origin}) : {e}")
-        state.set("sensor.autoradio_index", "erreur", {"friendly_name": "Autoradio : index", "error": str(e)[:200]})
+        log.error(f"neon_media_index ({origin}) : {e}")
+        state.set("sensor.neon_media_index", "erreur", {"friendly_name": "Neon Media : index", "error": str(e)[:200]})
         return
-    log.info(f"autoradio_index ({origin}) : {r}")
-    attrs = {"friendly_name": "Autoradio : index", "unit_of_measurement": "titres", "icon": "mdi:music-box-multiple",
+    log.info(f"neon_media_index ({origin}) : {r}")
+    attrs = {"friendly_name": "Neon Media : index", "unit_of_measurement": "titres", "icon": "mdi:music-box-multiple",
              "origin": origin, "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
     attrs.update(r)
-    state.set("sensor.autoradio_index", r["tracks"], attrs)
+    state.set("sensor.neon_media_index", r["tracks"], attrs)
 
 
 @time_trigger("cron(30 4 * * *)")
-async def autoradio_index_nightly():
+async def neon_media_index_nightly():
     await _run("nuit")
 
 
 @time_trigger("startup")
-def autoradio_index_startup():
+def neon_media_index_startup():
     # Laisser le partage réseau se monter avant de parcourir /media.
     task.sleep(120)
     _run("démarrage")
 
 
 @service
-async def autoradio_index():
-    """Régénère l'index de la bibliothèque et la liste des préréglages .feq de autoradio-card."""
+async def neon_media_index():
+    """Régénère l'index de la bibliothèque et la liste des préréglages .feq de neon-media-card."""
     await _run("service")

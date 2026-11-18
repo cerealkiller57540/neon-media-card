@@ -1,11 +1,19 @@
-// autoradio-card : façade d'autoradio double DIN, écran WebGL (aurore + spectre LED) sous du verre HTML.
+// neon-media-card : façade d'autoradio double DIN, écran WebGL (aurore + spectre LED) sous du verre HTML.
 // Sources : dossier de médias HA et DLNA lus par le navigateur (vrai spectre via AnalyserNode),
 // Spotify piloté par son media_player (le son sort ailleurs : spectre simulé).
-const VERSION = "0.16.2";
-const TAG = "autoradio-card";
+const VERSION = "0.17.0";
+const TAG = "neon-media-card";
+const OLD_TAG = "autoradio-card"; // nom jusqu'à la 0.16 : alias du type et reprise des réglages par appareil
 const MODULE_URL = new URL(import.meta.url);
-// HACS sert le module depuis /hacsfiles/, mais pyscript écrit index.json et eq/ dans www/autoradio-card (/local/).
-const DATA_BASE = MODULE_URL.pathname.startsWith("/hacsfiles/") ? "/local/autoradio-card/" : new URL(".", MODULE_URL).pathname;
+// HACS sert le module depuis /hacsfiles/, mais pyscript écrit index.json et eq/ dans www/neon-media-card (/local/).
+const DATA_BASE = MODULE_URL.pathname.startsWith("/hacsfiles/") ? "/local/neon-media-card/" : new URL(".", MODULE_URL).pathname;
+// Les clés localStorage dérivent de TAG : celles de l'ancien nom sont recopiées une fois.
+try {
+  for (const k of [".play", ".eq", ".sink", ".set"]) {
+    const v = localStorage.getItem(OLD_TAG + k);
+    if (v !== null && localStorage.getItem(TAG + k) === null) localStorage.setItem(TAG + k, v);
+  }
+} catch (e) { /* stockage bloqué */ }
 const Q = MODULE_URL.search; // ?hacstag=… propagé aux sous-fichiers pour casser le cache avec la card
 
 // Valeurs réglées à l'œil au banc d'essai (ha-card-preview-bench, 2026-11-17) : ne pas les rechoisir au jugé.
@@ -141,7 +149,7 @@ const EN = {
   "Aucun serveur DLNA (intégration DLNA Digital Media Server absente)": "No DLNA server (DLNA Digital Media Server integration missing)",
   "Bibliothèque": "Library",
   "Mise à jour de la bibliothèque…": "Updating the library…",
-  "Service pyscript.autoradio_index absent : relecture seule": "Service pyscript.autoradio_index missing: rescan only",
+  "Service pyscript.neon_media_index absent : relecture seule": "Service pyscript.neon_media_index missing: rescan only",
   "Mise à jour refusée : ": "Update refused: ",
   "Bibliothèque : ": "Library: ",
   "Index introuvable": "Index not found",
@@ -217,7 +225,7 @@ const EN = {
   "Disque du jour": "Record of the day",
   "Rien ici": "Nothing here",
   "Spotify indisponible": "Spotify unavailable",
-  "Service pyscript.autoradio_playlists absent : seule la file en cours est disponible": "Service pyscript.autoradio_playlists missing: only the current queue is available",
+  "Service pyscript.neon_media_playlists absent : seule la file en cours est disponible": "Service pyscript.neon_media_playlists missing: only the current queue is available",
   "Listes illisibles : ": "Lists unreadable: ",
   "‹ Annuler": "‹ Cancel",
   "Fichiers (": "Files (",
@@ -313,7 +321,7 @@ const RM_WIN = 30;
 const RM_ASK_MS = 6000; // après un ordre de la carte, les états transitoires du lecteur ne comptent pas
 // Le son de Web Audio sort par l'AudioContext : seul son setSinkId change la sortie (Chrome, pas Safari).
 const SINK = typeof AudioContext !== "undefined" && "setSinkId" in AudioContext.prototype;
-const PL_MAX = 2000, PL_LISTS = 100; // plafonds du service pyscript.autoradio_playlists
+const PL_MAX = 2000, PL_LISTS = 100; // plafonds du service pyscript.neon_media_playlists
 const PL_DRAG_MAX = 2000; // au-delà, le glisser dans la file n'a plus de sens : tris seulement
 const PL_SAVE_MS = 600;
 const SP_MAX = 300; // vignettes rendues par niveau (l'intégration plafonne déjà ses listes)
@@ -363,7 +371,7 @@ const SET_UI = {
   tiles_hide: ["Replier les tuiles", (v) => (v ? tx("après ") + v + " s" : tx("jamais"))], crossfade: ["Fondu entre titres", (v) => (v ? v + " s" : tx("coupé"))],
 };
 const SET_KEYS = ["theme", "font", "palette_ha", ...Object.keys(SET_UI)];
-const WAKE_ZONE = 0.335; // largeur de la colonne des tuiles (grid-template-columns de .ui dans autoradio.css)
+const WAKE_ZONE = 0.335; // largeur de la colonne des tuiles (grid-template-columns de .ui dans neon-media-card.css)
 const WAKE_DWELL = 600; // ms d'arrêt de la souris dans cette zone avant de rouvrir : un simple passage ne compte pas
 Object.assign(RANGES, {
   eq_curve_glow: [0, 2, 0.05], eq_fill: [0, 0.6, 0.01], eq_spec: [0, 1, 0.05], eq_thumb: [0.6, 1.6, 0.05], eq_q: [0.5, 3, 0.1],
@@ -489,7 +497,7 @@ function hsl(h, s, l) {
   return [f(0), f(8), f(4)];
 }
 
-class AutoradioCard extends HTMLElement {
+class NeonMediaCard extends HTMLElement {
   static getStubConfig(hass) {
     const ids = Object.keys(hass?.states ?? {});
     return { entity: ids.find((id) => id.startsWith("media_player.spotify")) ?? "", media_folder: "media-source://media_source/local" };
@@ -615,7 +623,7 @@ class AutoradioCard extends HTMLElement {
     this._themeOf = this._cfg.theme;
     this._cover = new URL("cover.webp" + Q, MODULE_URL).href;
     this._root.innerHTML =
-      '<link rel="stylesheet" href="' + new URL("autoradio.css" + Q, MODULE_URL).href + '">' +
+      '<link rel="stylesheet" href="' + new URL("neon-media-card.css" + Q, MODULE_URL).href + '">' +
       "<style>:host{display:block}ha-card{background:none;border:0;box-shadow:none;overflow:visible}</style>" +
       '<ha-card><div class="ar" style="background-image:url(' + theme + ')">' +
       '<div class="keys">' + KEYS.map((k) => '<button class="key" data-k="' + k[0] + '" aria-label="' + tx(k[1]) + '"><span>' + svg(k[0]) + "</span></button>").join("") + "</div>" +
@@ -984,7 +992,7 @@ class AutoradioCard extends HTMLElement {
         S.libs[id] = { title, tracks: tracks.slice(0, 1000), truncated: truncated || todo.length > 0 || tracks.length > 1000 };
   }
 
-  /* ── index de la bibliothèque (pyscript autoradio_index : index.json, servi gzip par HA) ── */
+  /* ── index de la bibliothèque (pyscript neon_media_index : index.json, servi gzip par HA) ── */
   _index(force) {
     if (force) this._idxP = null;
     return (this._idxP ||= fetch(this._cfg.index_url, { cache: force ? "reload" : "no-cache" })
@@ -1019,10 +1027,10 @@ class AutoradioCard extends HTMLElement {
     if (S.loading) return;
     S.loading = "mp3";
     this._showSource();
-    const svc = !!this._hass?.services?.pyscript?.autoradio_index;
-    this._toast(svc ? tx("Mise à jour de la bibliothèque…") : tx("Service pyscript.autoradio_index absent : relecture seule"));
+    const svc = !!this._hass?.services?.pyscript?.neon_media_index;
+    this._toast(svc ? tx("Mise à jour de la bibliothèque…") : tx("Service pyscript.neon_media_index absent : relecture seule"));
     try {
-      if (svc) await this._hass.callService("pyscript", "autoradio_index", {});
+      if (svc) await this._hass.callService("pyscript", "neon_media_index", {});
     } catch (e) {
       this._toast(tx("Mise à jour refusée : ") + (e.message || e));
     }
@@ -1559,14 +1567,14 @@ class AutoradioCard extends HTMLElement {
     if (this.S.queue[this.S.idx] === tr) this._showTrack();
   }
 
-  // Dernier recours : service pyscript.autoradio_cover (Discogs, jeton côté serveur, cache disque).
+  // Dernier recours : service pyscript.neon_media_cover (Discogs, jeton côté serveur, cache disque).
   // Absent chez qui n'a pas le pyscript : on n'appelle rien.
   async _discogsCover(m) {
-    if (!this._hass?.services?.pyscript?.autoradio_cover) return "";
+    if (!this._hass?.services?.pyscript?.neon_media_cover) return "";
     const key = m.artist + "|" + (m.album || m.title);
     const c = (this._dcC ||= new Map());
     if (!c.has(key)) {
-      c.set(key, this._hass.callWS({ type: "call_service", domain: "pyscript", service: "autoradio_cover",
+      c.set(key, this._hass.callWS({ type: "call_service", domain: "pyscript", service: "neon_media_cover",
         service_data: { artist: m.artist, album: m.album, title: m.title }, return_response: true })
         .then((r) => r?.response?.url || "", () => ""));
     }
@@ -1985,7 +1993,7 @@ class AutoradioCard extends HTMLElement {
       S.loading === "mp3" ? tx("Lecture en cours…") : lib ? lib.tracks.length.toLocaleString(LOC()) + tx(" titres") + (lib.indexed ? tx(" · index du ") + lib.indexed : "") : tx("régénère l'index côté HA puis le relit"), !!S.loading);
     h += '<p class="sph">' + tx("Cet appareil") + '</p>' + btn("setall", svg("back"), tx("Revenir aux réglages de la carte"),
       n ? n + (n > 1 ? tx(" réglages faits ici, prioritaires") : tx(" réglage fait ici, prioritaire")) + tx(" sur ceux de l'éditeur") : tx("aucun réglage propre à cet appareil"), !n);
-    h += '<p class="setv">autoradio-card ' + VERSION + "</p>";
+    h += '<p class="setv">' + TAG + " " + VERSION + "</p>";
     const g = this.$(".spg"), y = g.scrollTop, f = this._root.activeElement?.dataset?.k;
     g.innerHTML = h;
     g.scrollTop = y;
@@ -2159,15 +2167,15 @@ class AutoradioCard extends HTMLElement {
     g.scrollTop = 0;
   }
 
-  /* ── page Playlists : listes enregistrées côté HA (pyscript.autoradio_playlists) et file en cours ── */
+  /* ── page Playlists : listes enregistrées côté HA (pyscript.neon_media_playlists) et file en cours ── */
   // Une liste = {id, name, rev, tracks:[[media_id, titre, artiste, album]]}. rev : le service refuse
   // une écriture faite sur une version périmée et renvoie celle en place.
   _plSvc() {
-    return !!this._hass?.services?.pyscript?.autoradio_playlists;
+    return !!this._hass?.services?.pyscript?.neon_media_playlists;
   }
 
   async _plCall(data) {
-    const r = await this._hass.callWS({ type: "call_service", domain: "pyscript", service: "autoradio_playlists", service_data: data, return_response: true });
+    const r = await this._hass.callWS({ type: "call_service", domain: "pyscript", service: "neon_media_playlists", service_data: data, return_response: true });
     return r?.response ?? {};
   }
 
@@ -2178,7 +2186,7 @@ class AutoradioCard extends HTMLElement {
     this._plRender();
     this._plImgs();
     if (!this._plSvc()) {
-      this._pl = { lists: null, err: tx("Service pyscript.autoradio_playlists absent : seule la file en cours est disponible") };
+      this._pl = { lists: null, err: tx("Service pyscript.neon_media_playlists absent : seule la file en cours est disponible") };
       this._plRender();
       return;
     }
@@ -2869,7 +2877,7 @@ const LABELS = {
   hue: "Teinte", hue2: "Seconde teinte (mélangée à la première)", vivid: "Éclat des couleurs (0 = pastel d'origine, 1 = couleur pure)", glow: "Halo", glass: "Opacité du verre", blur: "Flou du verre (px)", aurora: "Aurore", text: "Taille du texte",
 };
 
-class AutoradioCardEditor extends HTMLElement {
+class NeonMediaCardEditor extends HTMLElement {
   constructor() {
     super();
     this._config = {};
@@ -2928,12 +2936,14 @@ class AutoradioCardEditor extends HTMLElement {
   }
 }
 
-if (!customElements.get(TAG)) customElements.define(TAG, AutoradioCard);
-if (!customElements.get(TAG + "-editor")) customElements.define(TAG + "-editor", AutoradioCardEditor);
+if (!customElements.get(TAG)) customElements.define(TAG, NeonMediaCard);
+if (!customElements.get(TAG + "-editor")) customElements.define(TAG + "-editor", NeonMediaCardEditor);
+// Un constructeur ne se déclare qu'une fois : l'ancien type passe par une sous-classe, absente du sélecteur.
+if (!customElements.get(OLD_TAG)) customElements.define(OLD_TAG, class extends NeonMediaCard {});
 (window.customCards = window.customCards || []).push({
   type: TAG,
-  name: "Autoradio",
+  name: "Neon Media",
   description: tx("Façade d'autoradio double DIN : dossier de médias, DLNA et Spotify, spectre WebGL, égaliseur 10 bandes, fondu enchaîné."),
   preview: false,
 });
-console.info("%c AUTORADIO-CARD %c " + VERSION + " ", "background:#0b1a2e;color:#5ab0ff;font-weight:700", "color:#5ab0ff");
+console.info("%c NEON-MEDIA-CARD %c " + VERSION + " ", "background:#0b1a2e;color:#5ab0ff;font-weight:700", "color:#5ab0ff");

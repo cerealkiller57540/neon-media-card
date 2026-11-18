@@ -1,4 +1,4 @@
-// autoradio-card — lecture des tags d'un fichier audio par requêtes Range (seul le début du fichier
+// neon-media-card — lecture des tags d'un fichier audio par requêtes Range (seul le début du fichier
 // voyage) : ID3v2.2/2.3/2.4 des MP3 et blocs de métadonnées FLAC. Renvoie titre, artiste, album
 // et la pochette intégrée (APIC / PICTURE), de préférence la face avant (type 3).
 
@@ -158,7 +158,7 @@ export async function readTags(url, signal) {
     if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) return await readId3(url, head, signal);
     if (head[0] === 0x66 && head[1] === 0x4c && head[2] === 0x61 && head[3] === 0x43) return await readFlac(url, head, signal);
   } catch (e) {
-    if (e.name !== "AbortError") console.debug("autoradio-card: tags", e.message || e);
+    if (e.name !== "AbortError") console.debug("neon-media-card: tags", e.message || e);
   }
   return null;
 }

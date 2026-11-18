@@ -138,7 +138,7 @@ export async function resolveTracks(hass, items, isDead) {
         }
         return { url: url.href, title: it.title };
       } catch (e) {
-        console.warn("autoradio-card: resolve_media", it.media_content_id, e);
+        console.warn("neon-media-card: resolve_media", it.media_content_id, e);
         return null;
       }
     }));

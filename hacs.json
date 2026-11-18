@@ -1,6 +1,6 @@
 {
-  "name": "Autoradio Card",
-  "filename": "autoradio-card.js",
+  "name": "Neon Media Card",
+  "filename": "neon-media-card.js",
   "render_readme": true,
   "homeassistant": "2024.1.0"
 }

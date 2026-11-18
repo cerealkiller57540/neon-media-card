@@ -1,7 +1,7 @@
 """
-Pochette de secours pour custom:autoradio-card, cherchée sur Discogs.
+Pochette de secours pour custom:neon-media-card, cherchée sur Discogs.
 
-La carte appelle pyscript.autoradio_cover(artist, album, title) avec return_response
+La carte appelle pyscript.neon_media_cover(artist, album, title) avec return_response
 quand un titre n'a ni image intégrée (APIC/PICTURE) ni image de dossier.
 Le jeton est celui de l'intégration Discogs de HA, relu dans core.config_entries :
 il reste côté serveur, la carte ne le voit jamais.
@@ -16,8 +16,8 @@ import os
 import time
 
 ENTRIES = "/config/.storage/core.config_entries"
-COVERS = "/config/autoradio_covers.json"
-UA = "HomeAssistant-autoradio-card/1.0"
+COVERS = "/config/neon_media_covers.json"
+UA = "HomeAssistant-neon-media-card/1.0"
 TIMEOUT = 10
 RETRY_MISS = 30 * 86400
 MIN_GAP = 1.1  # secondes entre deux requêtes Discogs
@@ -93,9 +93,9 @@ def _lookup(artist, album, title, gap):
 
 
 @service(supports_response="only")
-def autoradio_cover(artist="", album="", title=""):
+def neon_media_cover(artist="", album="", title=""):
     """yaml
-name: Autoradio, pochette Discogs
+name: Neon Media, pochette Discogs
 description: Cherche la pochette d'un album sur Discogs (jeton de l'intégration Discogs), avec cache.
 fields:
   artist: {description: Artiste, example: IAMX, required: true, selector: {text: {}}}
@@ -107,5 +107,5 @@ fields:
     try:
         return _lookup(artist, album, title, _gap)
     except Exception as e:
-        log.warning(f"autoradio_cover {artist!r} / {album or title!r} : {e}")
+        log.warning(f"neon_media_cover {artist!r} / {album or title!r} : {e}")
         return {"url": "", "error": str(e)[:200]}

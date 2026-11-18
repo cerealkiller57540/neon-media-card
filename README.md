@@ -1,29 +1,29 @@
 <div align="center">
 
-# Autoradio Card
+# Neon Media Card
 
-**A double-DIN car stereo for your Home Assistant dashboard: your music library, DLNA and Spotify behind one faceplate, with a WebGL spectrum and a 10-band equalizer.**
+**A neon music player card for Home Assistant, built like a double-DIN car stereo: your local music library, DLNA and Spotify behind one faceplate, with a WebGL spectrum and a 10-band equalizer.**
 
 [![HACS Custom][hacs-badge]][hacs-url]
 [![Release][release-badge]][release-url]
 [![Validate][validate-badge]][validate-url]
 [![License: MIT][license-badge]][license-url]
 
-[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=cerealkiller57540&repository=autoradio-card&category=plugin)
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=cerealkiller57540&repository=neon-media-card&category=plugin)
 
-<img src="https://raw.githubusercontent.com/cerealkiller57540/autoradio-card/main/images/home.png" alt="Autoradio Card home screen: now playing on the left, source and settings tiles on the right" width="720">
+<img src="https://raw.githubusercontent.com/cerealkiller57540/neon-media-card/main/images/home.png" alt="Neon Media Card home screen: now playing on the left, source and settings tiles on the right" width="720">
 
 </div>
 
 The card plays your files **in the browser itself**, through Web Audio: the equalizer, the spectrum and the crossfade work on the real signal, not on a picture of it. When you would rather hear it on a speaker, the Outputs page hands playback to any `media_player`.
 
 <p>
-  <img src="https://raw.githubusercontent.com/cerealkiller57540/autoradio-card/main/images/now-playing.png" alt="Now playing, full width" width="400">
-  <img src="https://raw.githubusercontent.com/cerealkiller57540/autoradio-card/main/images/equalizer.png" alt="10-band equalizer with live spectrum" width="400">
+  <img src="https://raw.githubusercontent.com/cerealkiller57540/neon-media-card/main/images/now-playing.png" alt="Now playing, full width" width="400">
+  <img src="https://raw.githubusercontent.com/cerealkiller57540/neon-media-card/main/images/equalizer.png" alt="10-band equalizer with live spectrum" width="400">
 </p>
 <p>
-  <img src="https://raw.githubusercontent.com/cerealkiller57540/autoradio-card/main/images/spotify.png" alt="Spotify library with the album of the day" width="400">
-  <img src="https://raw.githubusercontent.com/cerealkiller57540/autoradio-card/main/images/settings.png" alt="Per-device settings: faceplate, palette, hues" width="400">
+  <img src="https://raw.githubusercontent.com/cerealkiller57540/neon-media-card/main/images/spotify.png" alt="Spotify library with the album of the day" width="400">
+  <img src="https://raw.githubusercontent.com/cerealkiller57540/neon-media-card/main/images/settings.png" alt="Per-device settings: faceplate, palette, hues" width="400">
 </p>
 
 *The screenshots show the French interface. The card follows your Home Assistant language: French or English.*
@@ -48,23 +48,23 @@ The card plays your files **in the browser itself**, through Web Audio: the equa
 
 ### HACS (recommended)
 
-1. Click the **Open in HACS** button above, or add this repository as a custom repository in HACS (category **Dashboard**): `https://github.com/cerealkiller57540/autoradio-card`.
-2. Download **Autoradio Card**.
+1. Click the **Open in HACS** button above, or add this repository as a custom repository in HACS (category **Dashboard**): `https://github.com/cerealkiller57540/neon-media-card`.
+2. Download **Neon Media Card**.
 3. Reload your browser.
 
-HACS registers one resource, `autoradio-card.js`. The faceplates, fonts and helper modules next to it are loaded by the card itself. The card type is `custom:autoradio-card`.
+HACS registers one resource, `neon-media-card.js`. The faceplates, fonts and helper modules next to it are loaded by the card itself. The card type is `custom:neon-media-card`. Until version 0.16 the card was called *Autoradio Card* (`custom:autoradio-card`): that type still works, so existing dashboards need no change.
 
 ### Manual
 
-1. Copy every file of [`dist/`](dist/) to `config/www/autoradio-card/`.
-2. Add a dashboard resource: URL `/local/autoradio-card/autoradio-card.js`, type **JavaScript module**.
+1. Copy every file of [`dist/`](dist/) to `config/www/neon-media-card/`.
+2. Add a dashboard resource: URL `/local/neon-media-card/neon-media-card.js`, type **JavaScript module**.
 
 ## 🚀 Usage
 
-Add a card from the dashboard editor and search for **Autoradio**, or use YAML:
+Add a card from the dashboard editor and search for **Neon Media**, or use YAML:
 
 ```yaml
-type: custom:autoradio-card
+type: custom:neon-media-card
 entity: media_player.spotify_me              # optional: the Spotify integration's player
 media_folder: media-source://media_source/local
 outputs:                                     # optional: players offered on the Outputs page
@@ -84,8 +84,8 @@ The card is wide by design (a car stereo is about 2:1). It fits best in a full-w
 | `outputs` | list | — | `media_player` entities offered on the Outputs page |
 | `media_folder` | string | `media-source://media_source/local` | Root of the MP3 source |
 | `dlna_folder` | string | `media-source://dlna_dms` | Root of the DLNA source |
-| `index_url` | string | `/local/autoradio-card/index.json` | Library index written by the index script. The default matches where the script writes it, with HACS or a manual install |
-| `eq_folder` | string | `/local/autoradio-card/eq/` | Folder of `.feq` presets, listed by an `index.json` written by the index script |
+| `index_url` | string | `/local/neon-media-card/index.json` | Library index written by the index script. The default matches where the script writes it, with HACS or a manual install |
+| `eq_folder` | string | `/local/neon-media-card/eq/` | Folder of `.feq` presets, listed by an `index.json` written by the index script |
 | `theme` | string | `graphite` | Faceplate: `graphite`, `anthracite`, `silver`, `black` |
 | `font` | string | `system` | Screen font: `system`, `orbitron`, `exo2`, `saira`, `oxanium`, `jura`, `sharetechmono` |
 | `palette_ha` | bool | `false` | Use the Home Assistant theme colours instead of the hues |
@@ -107,9 +107,9 @@ The card works on its own. Three [pyscript](https://github.com/custom-components
 
 | Script | Service | What it adds |
 |---|---|---|
-| `autoradio_index.py` | `pyscript.autoradio_index` | Walks `/media` on the server every night (and at start-up) and writes `www/autoradio-card/index.json`, gzipped. Without it, the browser can only list one folder at a time, which caps the MP3 source at about 80 folders and 1,000 tracks. It also writes the list of `.feq` presets in `www/autoradio-card/eq/`. |
-| `autoradio_playlists.py` | `pyscript.autoradio_playlists` | Stores the playlists in `config/autoradio_playlists.json`, shared by every device. A device writing over a list changed elsewhere gets the newer version instead of overwriting it. Without it, there are no saved playlists, only the play queue. |
-| `autoradio_cover.py` | `pyscript.autoradio_cover` | Last-resort cover art from Discogs, for tracks with no embedded or folder image. It needs the [Discogs integration](https://www.home-assistant.io/integrations/discogs/) and uses its token, server-side only; without it, the script does nothing and the card keeps its default cover. Results are cached in `config/autoradio_covers.json`. |
+| `neon_media_index.py` | `pyscript.neon_media_index` | Walks `/media` on the server every night (and at start-up) and writes `www/neon-media-card/index.json`, gzipped. Without it, the browser can only list one folder at a time, which caps the MP3 source at about 80 folders and 1,000 tracks. It also writes the list of `.feq` presets in `www/neon-media-card/eq/`. |
+| `neon_media_playlists.py` | `pyscript.neon_media_playlists` | Stores the playlists in `config/neon_media_playlists.json`, shared by every device. A device writing over a list changed elsewhere gets the newer version instead of overwriting it. Without it, there are no saved playlists, only the play queue. |
+| `neon_media_cover.py` | `pyscript.neon_media_cover` | Last-resort cover art from Discogs, for tracks with no embedded or folder image. It needs the [Discogs integration](https://www.home-assistant.io/integrations/discogs/) and uses its token, server-side only; without it, the script does nothing and the card keeps its default cover. Results are cached in `config/neon_media_covers.json`. |
 
 ## ❓ FAQ
 
@@ -119,7 +119,7 @@ The card works on its own. Three [pyscript](https://github.com/custom-components
 
 **The music stops when I leave the view.** The audio lives in the browser tab. Switching views keeps it playing (the card picks up the running track when it comes back); closing the tab or the Home Assistant app stops it. For playback that survives, send it to a speaker from the Outputs page.
 
-**The MP3 source only shows part of my library.** Install `autoradio_index.py` (see above); the card finds its index without any setting.
+**The MP3 source only shows part of my library.** Install `neon_media_index.py` (see above); the card finds its index without any setting.
 
 **Can I choose the audio output device?** On Chrome and Edge, yes, from the Outputs page. Safari and Firefox do not let a page pick the output of Web Audio.
 
@@ -133,7 +133,7 @@ The six optional screen fonts (Orbitron, Exo 2, Saira, Oxanium, Jura, Share Tech
 
 ## 🧱 How this repository is built
 
-`dist/autoradio-card.js` is the file HACS installs. It is built from the version running on the author's own Home Assistant: personal defaults are replaced with neutral ones, the version number is stamped, and the build stops if a local IP address or a token is found. That working copy is not published; bugs and suggestions are welcome as issues.
+`dist/neon-media-card.js` is the file HACS installs. It is built from the version running on the author's own Home Assistant: personal defaults are replaced with neutral ones, the version number is stamped, and the build stops if a local IP address or a token is found. That working copy is not published; bugs and suggestions are welcome as issues.
 
 This card is part of a family. See the full collection at [**Home-Assistant-Neon-Cards**](https://github.com/cerealkiller57540/Home-Assistant-Neon-Cards).
 
@@ -164,9 +164,9 @@ If you enjoy these cards, please consider donating to **Quatre Pattes**, an anim
 
 [hacs-badge]: https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge
 [hacs-url]: https://hacs.xyz
-[release-badge]: https://img.shields.io/github/v/release/cerealkiller57540/autoradio-card?style=for-the-badge
-[release-url]: https://github.com/cerealkiller57540/autoradio-card/releases
-[validate-badge]: https://img.shields.io/github/actions/workflow/status/cerealkiller57540/autoradio-card/validate.yml?branch=main&label=HACS&style=for-the-badge
-[validate-url]: https://github.com/cerealkiller57540/autoradio-card/actions/workflows/validate.yml
-[license-badge]: https://img.shields.io/github/license/cerealkiller57540/autoradio-card?style=for-the-badge
+[release-badge]: https://img.shields.io/github/v/release/cerealkiller57540/neon-media-card?style=for-the-badge
+[release-url]: https://github.com/cerealkiller57540/neon-media-card/releases
+[validate-badge]: https://img.shields.io/github/actions/workflow/status/cerealkiller57540/neon-media-card/validate.yml?branch=main&label=HACS&style=for-the-badge
+[validate-url]: https://github.com/cerealkiller57540/neon-media-card/actions/workflows/validate.yml
+[license-badge]: https://img.shields.io/github/license/cerealkiller57540/neon-media-card?style=for-the-badge
 [license-url]: LICENSE
