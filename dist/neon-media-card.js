@@ -1,7 +1,7 @@
 // neon-media-card : façade d'autoradio double DIN, écran WebGL (aurore + spectre LED) sous du verre HTML.
 // Sources : dossier de médias HA et DLNA lus par le navigateur (vrai spectre via AnalyserNode),
 // Spotify piloté par son media_player (le son sort ailleurs : spectre simulé).
-const VERSION = "0.17.0";
+const VERSION = "0.17.1";
 const TAG = "neon-media-card";
 const OLD_TAG = "autoradio-card"; // nom jusqu'à la 0.16 : alias du type et reprise des réglages par appareil
 const MODULE_URL = new URL(import.meta.url);
@@ -319,6 +319,9 @@ const OUT_DFLT = [];
 // Titres confiés d'avance à un lecteur qui a sa propre file (Sonos) : il enchaîne même carte fermée.
 const RM_WIN = 30;
 const RM_ASK_MS = 6000; // après un ordre de la carte, les états transitoires du lecteur ne comptent pas
+// Titres suivants signés d'avance pour le son du navigateur (≈ 2 h) : HA coupe la connexion d'une page
+// cachée depuis 5 min, et sans connexion plus aucune URL ne peut être signée.
+const PRESIGN = 30;
 // Le son de Web Audio sort par l'AudioContext : seul son setSinkId change la sortie (Chrome, pas Safari).
 const SINK = typeof AudioContext !== "undefined" && "setSinkId" in AudioContext.prototype;
 const PL_MAX = 2000, PL_LISTS = 100; // plafonds du service pyscript.neon_media_playlists
@@ -558,7 +561,12 @@ class NeonMediaCard extends HTMLElement {
     // Les variables du theme sont posees par HA apres la mise a jour de hass : relecture differee.
     const tk = JSON.stringify([h.themes?.theme, h.themes?.darkMode, h.selectedTheme]);
     if (tk !== this._thk) { this._thk = tk; if (this._built && this._cfg.palette_ha) setTimeout(() => { this._applyLook(); this._setRender(); }, 80); }
-    if (this._built) { this._syncSpotify(); this._syncRemote(); if (this.S.page === "out") this._outRender(); }
+    if (this._built) {
+      this._syncSpotify(); this._syncRemote();
+      if (this.S.page === "out") this._outRender();
+      const tr = this.S.queue[this.S.idx];
+      if (tr && this._tagFor !== tr.id && this._tagC?.get(tr.id)?.lost && !this._offline()) this._tagsFor(tr);
+    }
   }
 
   getCardSize() {
@@ -571,6 +579,7 @@ class NeonMediaCard extends HTMLElement {
 
   connectedCallback() {
     clearTimeout(this._detach);
+    this._rmUnwatch(); // HA lui passe de nouveau hass
     if (!this._cfg) return;
     if (this._adopted) {
       if (this._adopted.parentNode === this._root) return; // reconnectee avec l'hote
@@ -578,7 +587,7 @@ class NeonMediaCard extends HTMLElement {
       this._adopted = null; // reprise entre-temps par une autre carte
     }
     if (!this._built) {
-      const o = [...LIVE].reverse().find((x) => !x.isConnected && (x._playing() || (x._audio && x.S.queue.length)));
+      const o = [...LIVE].reverse().find((x) => !x.isConnected && (x._playing() || x._rmSub || (x._audio && x.S.queue.length)));
       if (o) { this._adopt(o); return; }
       this._build();
       LIVE.add(this);
@@ -609,11 +618,13 @@ class NeonMediaCard extends HTMLElement {
     clearTimeout(this._tick);
     this._raf = this._tick = 0;
     clearTimeout(this._detach);
+    this._rmWatch();
     // Changement de vue : on garde tout une minute ; la musique du navigateur continue même au-delà.
+    // Entre deux titres rien ne joue : une sortie suivie ou une reprise attendue compte comme une lecture.
     this._detach = setTimeout(() => {
       if (this.isConnected) return;
       this._releaseGL();
-      if (!this._playing()) { this._releaseAudio(); LIVE.delete(this); }
+      if (!this._playing() && !this._rmSub && !this._connW) { this._releaseAudio(); LIVE.delete(this); }
     }, DETACH_MS);
   }
 
@@ -1193,7 +1204,7 @@ class NeonMediaCard extends HTMLElement {
       a.addEventListener("ended", () => { if (a === this._audio) this._onEnded(); });
       a.addEventListener("timeupdate", () => this._xfCheck(a));
       a.addEventListener("error", () => this._onError(a));
-      a.addEventListener("playing", () => { this.S.fails = 0; this._msOwn(); this._showSource(); });
+      a.addEventListener("playing", () => { this.S.fails = 0; this._msOwn(); this._showSource(); this._presign(); });
       a.addEventListener("pause", () => { if (a === this._audio && navigator.mediaSession) navigator.mediaSession.playbackState = "paused"; this._showSource(); });
       return a;
     };
@@ -1299,12 +1310,77 @@ class NeonMediaCard extends HTMLElement {
     S.idx = i;
     this._xf = null;
     this._showTrack();
+    this._presign();
   }
 
   _nextIdx(d, auto) {
     const S = this.S;
-    const i = S.shuffle && S.queue.length > 1 ? (S.idx + 1 + Math.floor(Math.random() * (S.queue.length - 1))) % S.queue.length : S.idx + d;
+    if (S.shuffle && S.queue.length > 1) {
+      const j = d > 0 ? this._shufPeek() : -1;
+      return j >= 0 ? j : (S.idx + 1 + Math.floor(Math.random() * (S.queue.length - 1))) % S.queue.length;
+    }
+    const i = S.idx + d;
     return auto && !S.shuffle && !S.repeat && i >= S.queue.length ? -1 : i;
+  }
+
+  // Aléatoire : tirage fait d'avance pour que les titres à venir soient signés ; le suivant est le premier de la liste.
+  _shufPeek() {
+    const S = this.S, L = this._shuf;
+    if (!L || this._shufQ !== S.queue) return -1;
+    while (L.length) {
+      const j = L[0] === S.queue[S.idx] ? -1 : S.queue.indexOf(L[0]);
+      if (j >= 0) return j;
+      L.shift(); // titre en cours (déjà tiré) ou retiré de la file
+    }
+    return -1;
+  }
+
+  _shufFill(n) {
+    const S = this.S, n0 = S.queue.length;
+    if (this._shufQ !== S.queue) { this._shuf = []; this._shufQ = S.queue; }
+    const L = this._shuf, cur = S.queue[S.idx];
+    while (L.length && L[0] === cur) L.shift();
+    const seen = new Set(L).add(cur);
+    for (let k = 0; L.length < n && seen.size < n0 && k < n * 20; k++) {
+      const t = S.queue[Math.floor(Math.random() * n0)];
+      if (!seen.has(t)) { seen.add(t); L.push(t); }
+    }
+    return L;
+  }
+
+  _presign() {
+    const S = this.S;
+    if (!this._resolve || this._rmE() || S.src === "spotify" || S.queue.length < 2 || this._offline()) return;
+    const next = S.shuffle ? this._shufFill(PRESIGN) : this._rmAhead(S.idx, PRESIGN).map((j) => S.queue[j]);
+    for (const t of next) this._resolve(t.id).catch(() => {});
+  }
+
+  _offline() {
+    const c = this._hass?.connection;
+    return !!c && !c.connected;
+  }
+
+  // Connexion coupée (page cachée, réseau) : le titre ne peut pas être signé. Pas un échec de lecture :
+  // il part quand la connexion revient.
+  _waitConn(tr) {
+    this._connUnwait();
+    const w = { conn: this._hass.connection };
+    w.f = () => {
+      if (this._connW !== w) return;
+      this._connUnwait();
+      const S = this.S;
+      if (S.on && S.src !== "spotify" && !this._rmE() && S.queue[S.idx] === tr && !this._playing()) this._playIdx(S.idx);
+    };
+    w.conn.addEventListener("ready", w.f);
+    this._connW = w;
+  }
+
+  _connUnwait() {
+    const w = this._connW;
+    if (!w) return;
+    this._connW = null;
+    // Différé : la connexion parcourt ses écouteurs pendant qu'on retire celui-ci, le suivant serait sauté.
+    setTimeout(() => w.conn.removeEventListener("ready", w.f), 0);
   }
 
   /* ── égaliseur ── */
@@ -1460,6 +1536,7 @@ class NeonMediaCard extends HTMLElement {
 
   async _playIdx(i) {
     const S = this.S;
+    this._connUnwait();
     if (!S.queue.length) return;
     S.idx = ((i % S.queue.length) + S.queue.length) % S.queue.length;
     const tr = S.queue[S.idx];
@@ -1472,7 +1549,8 @@ class NeonMediaCard extends HTMLElement {
       this._resolve ||= (await mediaSource()).lazyResolver(() => this._hass);
       url = await this._resolve(tr.id);
     } catch (e) {
-      this._onError(null, e);
+      if (this._offline()) { if (S.queue[S.idx] === tr) this._waitConn(tr); }
+      else this._onError(null, e);
       return;
     }
     if (S.queue[S.idx] !== tr) return; // un autre titre a été demandé pendant la résolution
@@ -1554,9 +1632,12 @@ class NeonMediaCard extends HTMLElement {
       }
       if (!m.art && m.artist && !ab.signal.aborted) m.art = await this._discogsCover(m);
     } catch (e) {
-      if (!ab.signal.aborted) console.debug(TAG + ": tags", e.message || e);
+      // Connexion coupée : ce qui a été lu reste affiché, le reste est redemandé à son retour (set hass).
+      if (this._offline()) m.lost = true;
+      else if (!ab.signal.aborted) console.debug(TAG + ": tags", e.message || e);
     }
     if (ab.signal.aborted) { if (m.art.startsWith("blob:")) URL.revokeObjectURL(m.art); return; }
+    if (m.lost && this._tagFor === tr.id) this._tagFor = null;
     const c = (this._tagC ||= new Map());
     c.set(tr.id, m);
     while (c.size > TAG_CACHE) {
@@ -1576,7 +1657,11 @@ class NeonMediaCard extends HTMLElement {
     if (!c.has(key)) {
       c.set(key, this._hass.callWS({ type: "call_service", domain: "pyscript", service: "neon_media_cover",
         service_data: { artist: m.artist, album: m.album, title: m.title }, return_response: true })
-        .then((r) => r?.response?.url || "", () => ""));
+        .then((r) => r?.response?.url || "", (e) => {
+          // Connexion coupée : pas de réponse à garder, la demande sera refaite.
+          if (this._offline()) { c.delete(key); throw e; }
+          return "";
+        }));
     }
     return c.get(key);
   }
@@ -1759,6 +1844,43 @@ class NeonMediaCard extends HTMLElement {
     }
     const i = this._nextIdx(d, auto);
     if (i >= 0) this._playIdx(i);
+  }
+
+  // Carte retirée de la page (autre vue, panneau d'une page cachée) : HA ne lui passe plus hass.
+  // Elle suit alors elle-même la sortie qu'elle pilote, sinon la fin du titre passerait inaperçue.
+  _rmWatch() {
+    const e = this._rmE(), conn = this._hass?.connection;
+    if (this._rmSub || !e || !this._rmOwn() || !conn) return;
+    const sub = { e };
+    // Connexion suspendue : la promesse attend son retour, l'abonnement est rétabli à chaque reconnexion.
+    sub.p = conn.subscribeMessage((m) => this._rmFeed(sub, m), { type: "subscribe_entities", entity_ids: [e] });
+    sub.p.catch(() => { if (this._rmSub === sub) this._rmSub = null; });
+    this._rmSub = sub;
+  }
+
+  _rmUnwatch() {
+    const sub = this._rmSub;
+    if (!sub) return;
+    this._rmSub = null;
+    sub.p.then((u) => u()).catch(() => {});
+  }
+
+  // Messages compressés de subscribe_entities : a = état complet, c = changements (+ ajouts, - attributs retirés), r = supprimée.
+  _rmFeed(sub, m) {
+    if (this._rmSub !== sub) return;
+    if (this.isConnected) { this._rmUnwatch(); return; }
+    const e = sub.e, h = this._hass, a = m.a?.[e], c = m.c?.[e];
+    let st = h.states[e];
+    if (m.r?.includes(e)) { this._rmUnwatch(); return; }
+    if (a) st = { entity_id: e, state: a.s, attributes: a.a || {} };
+    else if (c && st) {
+      st = { ...st, attributes: { ...st.attributes } };
+      if (c["+"]) { if ("s" in c["+"]) st.state = c["+"].s; Object.assign(st.attributes, c["+"].a || {}); }
+      for (const k of c["-"]?.a || []) delete st.attributes[k];
+    } else return;
+    this._hass = { ...h, states: { ...h.states, [e]: st } };
+    this._syncRemote();
+    if (!this._rmOwn()) this._rmUnwatch();
   }
 
   // Suit le lecteur : titre en cours (file du lecteur), fin de titre (titre par titre), perte de la main.
@@ -2789,6 +2911,7 @@ class NeonMediaCard extends HTMLElement {
   }
 
   _releaseAudio() {
+    this._connUnwait();
     this._audio?.pause();
     this._msOwn(true);
     this._xfStop(null);

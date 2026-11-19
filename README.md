@@ -119,6 +119,8 @@ The card works on its own. Three [pyscript](https://github.com/custom-components
 
 **The music stops when I leave the view.** The audio lives in the browser tab. Switching views keeps it playing (the card picks up the running track when it comes back); closing the tab or the Home Assistant app stops it. For playback that survives, send it to a speaker from the Outputs page.
 
+**The music stops after a while when the tab is in the background.** Home Assistant closes its connection once a tab has been hidden for 5 minutes (profile setting *Suspend background connections*). Since 0.17.1 the browser output keeps going through the next 30 tracks, prepared in advance; past them, it waits and picks up again by itself when you come back to the tab. A player fed track by track stops at the end of its current track. To keep the connection open, turn that setting off in your Home Assistant profile; it is stored per browser.
+
 **The MP3 source only shows part of my library.** Install `neon_media_index.py` (see above); the card finds its index without any setting.
 
 **Can I choose the audio output device?** On Chrome and Edge, yes, from the Outputs page. Safari and Firefox do not let a page pick the output of Web Audio.
