@@ -1,7 +1,7 @@
 // neon-media-card : façade d'autoradio double DIN, écran WebGL (aurore + spectre LED) sous du verre HTML.
 // Sources : dossier de médias HA et DLNA lus par le navigateur (vrai spectre via AnalyserNode),
 // Spotify piloté par son media_player (le son sort ailleurs : spectre simulé).
-const VERSION = "0.18.0";
+const VERSION = "0.18.1";
 const TAG = "neon-media-card";
 const OLD_TAG = "autoradio-card"; // nom jusqu'à la 0.16 : alias du type et reprise des réglages par appareil
 const MODULE_URL = new URL(import.meta.url);
@@ -3569,7 +3569,8 @@ class NeonMediaCard extends HTMLElement {
     // Marche/arrêt : ON glisse sur 0,6 s ; le shader replie l'image en ligne puis en point (tube cathodique).
     const onT = S.on ? 1 : 0;
     if (REDUCED || this._onV == null) this._onV = onT;
-    else this._onV = onT > this._onV ? Math.min(1, this._onV + dt / 0.6) : Math.max(0, this._onV - dt / 0.6);
+    // Arrivée exacte sur la cible : sans le cas d'égalité, 1 retombait sous 1 une image sur deux (voile blanc qui scintille).
+    else if (onT !== this._onV) this._onV = onT > this._onV ? Math.min(1, this._onV + dt / 0.6) : Math.max(0, this._onV - dt / 0.6);
     const eqp = S.page === "eq";
     const sr = this._scr.getBoundingClientRect(), pr = (eqp ? this._espec : this._spec).getBoundingClientRect();
     if (!sr.width) return;
