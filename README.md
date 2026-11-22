@@ -30,15 +30,17 @@ The card plays your files **in the browser itself**, through Web Audio: the equa
 
 ## ✨ Features
 
-- **Three sources**: a media folder (`media-source`, e.g. `/media`), a DLNA server, and Spotify.
+- **Four sources**: a media folder (`media-source`, e.g. `/media`), a DLNA server, Spotify, and web radio.
 - **Large libraries**: with the optional index script, the whole library loads in one request (tested with about 30,000 tracks). Without it, the card browses folder by folder.
 - **Cover art** from the file tags (ID3 and FLAC), then the folder image, then, optionally, Discogs.
 - **10-band equalizer** on the actual audio: 8 built-in presets, a draggable curve, a live spectrum behind it, and foobar2000 `.feq` presets if you drop some in a folder.
 - **Crossfade** between tracks (0 to 12 s).
 - **Playlists** saved in Home Assistant, so every device sees the same lists, plus a sortable play queue and search.
 - **Spotify**: browse your library (playlists, artists, albums, liked songs, podcasts, recently played, top artists and tracks), pick the Spotify Connect device, and play an "album of the day" from any sensor holding a `spotify:` link.
+- **Web radio**: favourites, search, and browsing by country, genre and language, most listened first, through the public [Radio Browser](https://www.radio-browser.info) directory. A live stream has no seek bar and no crossfade, and reconnects by itself after a drop. The favourites start with four Radio France stations; the star adds or removes a station.
 - **Outputs**: this browser (with the audio output device on Chrome and Edge), or any `media_player`. Players with their own queue (Sonos) get the next tracks in advance and keep playing with the card closed; the others are fed track by track.
 - **Four faceplates** (graphite, anthracite, silver, black), ten colour palettes or your Home Assistant theme colours, two blended hues, glow, glass and text size.
+- **Living screen**: the aurora follows the bass of the music played in the browser, the screen collapses like a CRT tube on power off, the volume knob turns with its ring, covers cross-fade, a tap on the cover shows it full screen, and a live radio stream gets a sweeping progress bar. Everything calms down with the system's reduced-motion setting.
 - **Per-device settings**: the Settings page stores its choices in the browser, so the wall tablet and the phone can each have their own look over the same card.
 - **Hardware media keys** and the lock-screen controls (Media Session).
 - **Visual editor**, with no YAML needed. English and French.
@@ -108,7 +110,7 @@ The card works on its own. Three [pyscript](https://github.com/custom-components
 | Script | Service | What it adds |
 |---|---|---|
 | `neon_media_index.py` | `pyscript.neon_media_index` | Walks `/media` on the server every night (and at start-up) and writes `www/neon-media-card/index.json`, gzipped. Without it, the browser can only list one folder at a time, which caps the MP3 source at about 80 folders and 1,000 tracks. It also writes the list of `.feq` presets in `www/neon-media-card/eq/`. |
-| `neon_media_playlists.py` | `pyscript.neon_media_playlists` | Stores the playlists in `config/neon_media_playlists.json`, shared by every device. A device writing over a list changed elsewhere gets the newer version instead of overwriting it. Without it, there are no saved playlists, only the play queue. |
+| `neon_media_playlists.py` | `pyscript.neon_media_playlists` | Stores the playlists and the radio favourites in `config/neon_media_playlists.json`, shared by every device. A device writing over a list changed elsewhere gets the newer version instead of overwriting it. Without it, there are no saved playlists, only the play queue, and each browser keeps its own radio favourites. |
 | `neon_media_cover.py` | `pyscript.neon_media_cover` | Last-resort cover art from Discogs, for tracks with no embedded or folder image. It needs the [Discogs integration](https://www.home-assistant.io/integrations/discogs/) and uses its token, server-side only; without it, the script does nothing and the card keeps its default cover. Results are cached in `config/neon_media_covers.json`. |
 
 ## ❓ FAQ
@@ -127,9 +129,15 @@ The card works on its own. Three [pyscript](https://github.com/custom-components
 
 **Where do the `.feq` presets come from?** From foobar2000's equalizer (18 bands, brought back to 10). None is shipped: drop your own in the `eq_folder` and let the index script list them.
 
+**Some stations do not play, or play without the equalizer.** The browser plays each stream straight from the station's server. The equalizer and the real spectrum need that server to allow it (CORS); when it does not, the station still plays, untouched, with a simulated spectrum. On a Home Assistant served over HTTPS, the browser refuses plain `http://` streams: the card tries the same address over `https://`, and a station without HTTPS cannot play in that browser, only on a player from the Outputs page. HLS streams (greyed out) play only in browsers that read HLS natively, such as Safari, or on a player.
+
+**Do I need the Radio Browser integration of Home Assistant?** No. Search and browsing call the Radio Browser API from the browser. When the integration is installed, a station sent to a player goes through it (`media-source://radio_browser/…`) rather than as a bare stream address.
+
 ## 🔤 Fonts and privacy
 
-The six optional screen fonts (Orbitron, Exo 2, Saira, Oxanium, Jura, Share Tech Mono) are shipped next to the card as `font-*.woff2` files (Latin subset, unmodified from Google Fonts), and a font is only downloaded from your own Home Assistant when you pick it. The card makes **no request to Google Fonts** or any other third-party server. Discogs is only contacted by the optional cover script, from your server. The fonts are licensed under the SIL Open Font License 1.1, see [NOTICE.md](NOTICE.md).
+The six optional screen fonts (Orbitron, Exo 2, Saira, Oxanium, Jura, Share Tech Mono) are shipped next to the card as `font-*.woff2` files (Latin subset, unmodified from Google Fonts), and a font is only downloaded from your own Home Assistant when you pick it: the card makes **no request to Google Fonts**. Discogs is only contacted by the optional cover script, from your server. The fonts are licensed under the SIL Open Font License 1.1, see [NOTICE.md](NOTICE.md).
+
+The radio is the only part of the card that talks to third-party servers, from your browser: search and browsing call the public [Radio Browser](https://www.radio-browser.info) API (`all.api.radio-browser.info`, which receives the search terms or the list opened), country flags come from `flagcdn.com`, station logos from each station's website, and the stream from the station's server. These requests send no referrer, and none of them happens until you select the Radio source.
 
 ## 🌃 More neon cards
 

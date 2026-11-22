@@ -1,7 +1,7 @@
 // neon-media-card : façade d'autoradio double DIN, écran WebGL (aurore + spectre LED) sous du verre HTML.
 // Sources : dossier de médias HA et DLNA lus par le navigateur (vrai spectre via AnalyserNode),
 // Spotify piloté par son media_player (le son sort ailleurs : spectre simulé).
-const VERSION = "0.17.1";
+const VERSION = "0.18.0";
 const TAG = "neon-media-card";
 const OLD_TAG = "autoradio-card"; // nom jusqu'à la 0.16 : alias du type et reprise des réglages par appareil
 const MODULE_URL = new URL(import.meta.url);
@@ -68,6 +68,8 @@ const I = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   grip: '<path d="M7 7h10M7 12h10M7 17h10"/>',
+  radio: '<rect x="3" y="8.5" width="18" height="12" rx="2"/><path d="M7 8.5 17 3.5"/><circle cx="15.5" cy="14.5" r="3"/><path d="M6.5 12.5h3M6.5 16h3"/>',
+  star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.7l5.9-.9z"/>',
 };
 const svg = (k) => '<svg viewBox="0 0 24 24" aria-hidden="true">' + I[k] + "</svg>";
 const COLL = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
@@ -286,7 +288,7 @@ const EN = {
   "Lecteur introuvable": "Player not found",
   "Aspect": "Appearance",
   "Égaliseur et fondu": "Equalizer and crossfade",
-  "Façade d'autoradio double DIN : dossier de médias, DLNA et Spotify, spectre WebGL, égaliseur 10 bandes, fondu enchaîné.": "Double-DIN car radio faceplate: media folder, DLNA and Spotify, WebGL spectrum, 10-band equalizer, crossfade.",
+  "Façade d'autoradio double DIN : dossier de médias, DLNA, Spotify et webradio, spectre WebGL, égaliseur 10 bandes, fondu enchaîné.": "Double-DIN car radio faceplate: media folder, DLNA, Spotify and web radio, WebGL spectrum, 10-band equalizer, crossfade.",
   "Lecteur Spotify (media_player)": "Spotify player (media_player)",
   "Appareil à réveiller si Spotify dort (sinon le premier de la liste)": "Device to wake if Spotify sleeps (otherwise the first in the list)",
   "Disque du jour (capteur dont l'état est un lien spotify:, optionnel)": "Record of the day (sensor whose state is a spotify: link, optional)",
@@ -307,6 +309,31 @@ const EN = {
   "Seconde teinte (mélangée à la première)": "Second hue (blended with the first)",
   "Éclat des couleurs (0 = pastel d'origine, 1 = couleur pure)": "Color vividness (0 = original pastel, 1 = pure color)",
   "Flou du verre (px)": "Glass blur (px)",
+  "Favoris": "Favorites",
+  "Parcourir": "Browse",
+  "favori": "favorite",
+  "favoris": "favorites",
+  "Webradio": "Web radio",
+  "Chercher une station…": "Search a station…",
+  "Choisissez une station": "Pick a station",
+  "EN DIRECT": "LIVE",
+  "Station injoignable : ": "Station unreachable: ",
+  "Flux interrompu : ": "Stream interrupted: ",
+  "Aucun favori : touchez l'étoile d'une station.": "No favorites: tap a station's star.",
+  "Aucune station pour « ": "No station for “",
+  "Recherche impossible : radio-browser.info ne répond pas": "Search failed: radio-browser.info is not answering",
+  "Ajouter aux favoris": "Add to favorites",
+  "Retirer des favoris": "Remove from favorites",
+  "Station injoignable en https : ": "Station unreachable over https: ",
+  "Flux HLS : non lu par ce navigateur": "HLS stream: not played by this browser",
+  "Parcours impossible : radio-browser.info ne répond pas": "Browsing failed: radio-browser.info is not answering",
+  "Près de chez vous": "Near you",
+  "Populaires": "Popular",
+  "Langues": "Languages",
+  "Pays": "Countries",
+  " favoris au plus": " favorites at most",
+  "Favoris modifiés ailleurs : rechargés, refaites le geste": "Favorites changed elsewhere: reloaded, try again",
+  "Favoris non enregistrés : ": "Favorites not saved: ",
 };
 
 const AUDIO_RE = /\.(mp3|flac|ogg|oga|opus|m4a|aac|wav|webm)$/i;
@@ -314,7 +341,9 @@ const LONG_MS = 650;
 // Bits MediaPlayerEntityFeature : sans appareil actif, l'intégration Spotify n'annonce que SELECT_SOURCE.
 const SP_PLAY = 16384, SP_PLAY_MEDIA = 512, SP_BROWSE = 131072;
 // Lecteurs de la maison : fonctions media_player utilisées par la page Sorties.
-const MP_SEEK = 2, MP_PREV = 16, MP_NEXT = 32, MP_ON = 128, MP_ENQUEUE = 2097152;
+const MP_SEEK = 2, MP_PREV = 16, MP_NEXT = 32, MP_ON = 128, MP_STOP = 4096, MP_ENQUEUE = 2097152;
+const PAL_MS = 450; // fondu entre deux palettes
+const XQ = 0.8; // durée du fondu sur précédent/suivant (s)
 const OUT_DFLT = [];
 // Titres confiés d'avance à un lecteur qui a sa propre file (Sonos) : il enchaîne même carte fermée.
 const RM_WIN = 30;
@@ -336,11 +365,38 @@ const TILES = [
   { id: "mp3", ic: "mp3", t: "MP3", src: true },
   { id: "spotify", ic: "spotify", t: "Spotify", src: true },
   { id: "dlna", ic: "dlna", t: "DLNA", src: true },
+  { id: "radio", ic: "radio", t: "Radio", src: true },
   { id: "lists", ic: "lists", t: "Playlists" },
   { id: "eq", ic: "eq", t: "Égaliseur" },
   { id: "out", ic: "out", t: "Sorties" },
-  { id: "set", ic: "gear", t: "Réglages", wide: true },
+  { id: "set", ic: "gear", t: "Réglages" },
 ];
+// Webradio : station = {id, url, title, sub, thumb, live}. id = média Radio Browser de HA quand l'intégration est là
+// (Sonos le reçoit alors en mode radio), sinon l'URL du flux ; url = flux joué tel quel par le navigateur.
+const RB = "media-source://radio_browser";
+const RB_API = "https://all.api.radio-browser.info/json/";
+const RD_MAX = 200; // plafond du service pyscript.neon_media_playlists (MAX_RADIOS)
+const RD_TRIES = 3; // reconnexions d'un flux coupé avant d'abandonner
+const RF_ICON = (k) => "https://www.radiofrance.fr/external/favicons/" + k + "/favicon.png";
+const RF = (uuid, k, title) => ({ id: RB + "/" + uuid, url: "https://icecast.radiofrance.fr/" + k + "-hifi.aac", title, sub: "FR · AAC · 192 kb/s", thumb: RF_ICON(k), live: true });
+const DEFAULT_RADIOS = [
+  RF("31074f8a-e6f4-11e9-a96c-52543be04c81", "franceinfo", "France Info"),
+  RF("f760fce4-6d26-4203-9eb6-cf25e8799716", "franceinter", "France Inter"),
+  RF("a349e1e9-2844-443a-973b-09a02fa12c8e", "fip", "FIP"),
+  RF("6a1440b2-e6f0-11e9-a96c-52543be04c81", "franceculture", "France Culture"),
+];
+const RD_FLAG = (cc) => "https://flagcdn.com/w80/" + cc.toLowerCase() + ".png";
+// Le drapeau HLS de l'API n'est pas enregistré : il se déduit de l'URL au rechargement.
+const rdHls = (u) => /\.m3u8(\?|$)/i.test(u || "");
+// Ligne enregistrée [id, url, titre, sous-titre, image] -> station ; un id http(s) sert aussi d'URL.
+const rdRow = (t) => {
+  if (!Array.isArray(t) || typeof t[0] !== "string" || !t[2]) return null;
+  const url = t[1] || (/^https?:\/\//.test(t[0]) ? t[0] : "");
+  return { id: t[0], url, title: String(t[2]), sub: t[3] || "", thumb: t[4] || "", hls: rdHls(url), live: true };
+};
+// Même station sous deux formes : id Radio Browser (avec ou sans l'intégration HA) ou même flux.
+const rdSame = (a, b) => !!a && !!b && (a.id === b.id || (!!a.url && a.url === b.url) ||
+  (!!a.uuid && b.id === RB + "/" + a.uuid) || (!!b.uuid && a.id === RB + "/" + b.uuid));
 const KEYS = [["power", "Marche / arrêt"], ["home", "Accueil"], ["back", "Retour"], ["volup", "Volume +"], ["voldn", "Volume −"]];
 
 /* ── égaliseur : 10 bandes d'octave ; l'axe x est logarithmique et centre chaque bande dans sa colonne ── */
@@ -465,7 +521,10 @@ const FS = [
   "  col=mix(c0,col,SPI);",
   " }",
   " float g=p.x*.55+p.y; col+=vec3(.9,.95,1.)*.035*smoothstep(.95,1.15,g)*smoothstep(1.55,1.15,g);",
-  " col*=ON;",
+  " float v=clamp((ON-.15)/.85,0.,1.), hw=clamp(ON/.15,0.,1.);",
+  " float hh2=mix(.004,.62,v*v), ww=mix(0.,.62,hw*hw); vec2 dc=abs(p-.5);",
+  " float msk=(1.-smoothstep(hh2-.004,hh2+.004,dc.y))*(1.-smoothstep(ww-.01,ww+.01,dc.x));",
+  " col=(col+vec3(.85,.9,1.)*(1.-v)*step(.001,ON)*.9)*msk;",
   " col+=vec3(.9,.95,1.)*.03*smoothstep(1.2,1.5,g)*(1.-ON);",
   " gl_FragColor=vec4(col,1.);",
   "}",
@@ -639,7 +698,7 @@ class NeonMediaCard extends HTMLElement {
       '<ha-card><div class="ar" style="background-image:url(' + theme + ')">' +
       '<div class="keys">' + KEYS.map((k) => '<button class="key" data-k="' + k[0] + '" aria-label="' + tx(k[1]) + '"><span>' + svg(k[0]) + "</span></button>").join("") + "</div>" +
       '<div class="knob" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100">' +
-      '<svg viewBox="0 0 100 100"><circle class="trk" cx="50" cy="50" r="46"/><circle class="arc" cx="50" cy="50" r="46" transform="rotate(135 50 50)"/></svg></div>' +
+      '<div class="cap"></div><svg viewBox="0 0 100 100"><circle class="trk" cx="50" cy="50" r="46"/><circle class="arc" cx="50" cy="50" r="46" transform="rotate(135 50 50)"/></svg></div>' +
       '<div class="screen"><canvas></canvas><div class="ui">' +
       '<header class="status"><span class="clock">--:--</span>' +
       '<span class="pill"><i></i><span class="srcn"></span></span><span class="sp"></span>' +
@@ -657,7 +716,7 @@ class NeonMediaCard extends HTMLElement {
       "</div></div></section>" +
       '<div class="spec"></div>' +
       '<nav class="tiles">' + TILES.map((t) =>
-        '<button class="tile glass' + (t.wide ? " wide" : "") + '" data-id="' + t.id + '"' + (t.id === "mp3" ? ' title="' + tx("Appui long : relire la bibliothèque") + '"' : "") + '><span class="ic">' + svg(t.ic) +
+        '<button class="tile glass" style="--i:' + TILES.indexOf(t) + '" data-id="' + t.id + '"' + (t.id === "mp3" ? ' title="' + tx("Appui long : relire la bibliothèque") + '"' : "") + '><span class="ic">' + svg(t.ic) +
         "</span><span><b>" + tx(t.t) + "</b><small></small></span></button>").join("") +
       "</nav>" + this._eqHTML() + this._spHTML() + "</div>" +
       '<div class="toast" role="status"></div><div class="volpop"></div></div></div></ha-card>';
@@ -704,12 +763,16 @@ class NeonMediaCard extends HTMLElement {
       }
     });
     this.$(".spg").addEventListener("change", (e) => { if (this.S.page === "set" && e.target.matches?.('input[type="range"]')) this._setRender(); });
+    // Logos de stations : beaucoup d'URL mortes ; l'icône radio remplace l'image cassée.
+    this.$(".spg").addEventListener("error", (e) => { const t = e.target; if (this.S.page === "radio" && t.tagName === "IMG") { t.insertAdjacentHTML("afterend", svg("radio")); t.remove(); } }, true);
     const plq = this.$(".plq");
-    plq.addEventListener("input", () => this._plFilter(plq.value));
+    // Même champ pour le filtre de la page Playlists et la recherche de stations.
+    const q = (v) => (this.S.page === "radio" ? this._rdSearch(v) : this._plFilter(v));
+    plq.addEventListener("input", () => q(plq.value));
     // Le conteneur écoute le clavier pour le réveil de l'écran : la saisie ne doit pas lui parvenir.
     for (const ev of ["keydown", "keyup", "keypress"]) plq.addEventListener(ev, (e) => {
       e.stopPropagation();
-      if (ev === "keydown" && e.key === "Escape" && plq.value) { e.preventDefault(); plq.value = ""; this._plFilter(""); }
+      if (ev === "keydown" && e.key === "Escape" && plq.value) { e.preventDefault(); plq.value = ""; q(""); }
     });
     new IntersectionObserver((en) => { this._visible = en[0]?.isIntersecting !== false; }).observe(this._ar);
     this._built = true;
@@ -759,30 +822,49 @@ class NeonMediaCard extends HTMLElement {
     const ink = c.palette_ha && this._haInk();
     if (ink) { st.setProperty("--ink", ink); st.setProperty("--ink-hi", ink); }
     else { st.removeProperty("--ink"); st.removeProperty("--ink-hi"); }
-    st.setProperty("--h", c.hue);
-    st.setProperty("--h2", c.hue2);
     const F = FONTS.find((f) => f[0] === c.font);
     fontLoad(F);
     st.setProperty("--ff", fontStack(F));
-    const [A, A2] = accCols(c.hue, c.hue2, c.vivid);
-    st.setProperty("--acc", rgbs(A));
-    st.setProperty("--acc-soft", rgbs(A, 0.22));
-    st.setProperty("--acc-2", rgbs(A2));
-    st.setProperty("--vs", 90 + 10 * c.vivid + "%");
-    st.setProperty("--vl", -12 * c.vivid + "%");
+    this._paletteTo([num(c.hue, LOOK.hue), num(c.hue2, LOOK.hue), num(c.vivid, 0)]);
     st.setProperty("--glow", c.glow);
     st.setProperty("--glass", c.glass);
     st.setProperty("--blur", c.blur + "px");
     st.setProperty("--ts", c.text);
     st.setProperty("--cg", c.eq_curve_glow);
     st.setProperty("--thumb", c.eq_thumb);
-    const s0 = this.$(".curve .s0"), s1 = this.$(".curve .s1");
-    s0.setAttribute("stop-color", rgbs(A2));
-    s0.setAttribute("stop-opacity", c.eq_fill);
-    s1.setAttribute("stop-color", rgbs(A));
-    s1.setAttribute("stop-opacity", 0);
+    this.$(".curve .s0").setAttribute("stop-opacity", c.eq_fill);
+    this.$(".curve .s1").setAttribute("stop-opacity", 0);
     this._filt?.forEach((b, i) => { if (i && i < 9) b.Q.value = c.eq_q; });
     this._eqCurve();
+  }
+
+  // Changement de teintes : glissement de PAL_MS (teinte par le plus court chemin) au lieu d'un saut ;
+  // this._pal = teintes affichées, lues aussi par le shader.
+  _paletteTo(to) {
+    cancelAnimationFrame(this._palR);
+    const from = this._pal;
+    if (!from || REDUCED || from.every((v, i) => v === to[i])) { this._pal = to; this._paintCols(to); return; }
+    const t0 = performance.now(), arc = (a, b) => ((b - a + 540) % 360) - 180;
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / PAL_MS), e = k * (2 - k);
+      this._pal = k >= 1 ? to : [(from[0] + arc(from[0], to[0]) * e + 360) % 360, (from[1] + arc(from[1], to[1]) * e + 360) % 360, from[2] + (to[2] - from[2]) * e];
+      this._paintCols(this._pal);
+      if (k < 1) this._palR = requestAnimationFrame(step);
+    };
+    this._palR = requestAnimationFrame(step);
+  }
+
+  _paintCols([h, h2, v]) {
+    const st = this._ar.style, [A, A2] = accCols(h, h2, v);
+    st.setProperty("--h", h);
+    st.setProperty("--h2", h2);
+    st.setProperty("--acc", rgbs(A));
+    st.setProperty("--acc-soft", rgbs(A, 0.22));
+    st.setProperty("--acc-2", rgbs(A2));
+    st.setProperty("--vs", 90 + 10 * v + "%");
+    st.setProperty("--vl", -12 * v + "%");
+    this.$(".curve .s0").setAttribute("stop-color", rgbs(A2));
+    this.$(".curve .s1").setAttribute("stop-color", rgbs(A));
   }
 
   _flash(el, txt) {
@@ -799,23 +881,26 @@ class NeonMediaCard extends HTMLElement {
   /* ── interactions ── */
   _onClick(e) {
     const tile = e.target.closest(".tile"), key = e.target.closest(".key"), tb = e.target.closest(".tb"), bar = e.target.closest(".bar");
-    const pre = e.target.closest("[data-p]"), act = e.target.closest("[data-a]"), spi = e.target.closest("[data-sp]");
+    if (e.target.closest(".np .cover")) { this._coverZoom(); return; }
+    const pre = e.target.closest("[data-p]"), act = e.target.closest("[data-a]"), spi = e.target.closest("[data-sp]"), rdi = e.target.closest("[data-rd]");
     if (pre) this._eqSet(PRESETS[+pre.dataset.p][1].slice(), PRESETS[+pre.dataset.p][0]);
     else if (act) {
       const a = act.dataset.a;
       if (a === "back") this._page("home");
-      else if (a === "spup") this.S.page === "lists" ? this._plUp() : this._spUp();
+      else if (a === "spup") this.S.page === "lists" ? this._plUp() : this.S.page === "radio" ? this._rdUp() : this._spUp();
       else if (a === "spall") this.S.page === "lists" ? this._plPlayView(-1) : this._spPlay(this._spNode);
       else if (a.startsWith("pl")) this._plAct(a, act);
+      else if (a.startsWith("rd")) this._rdAct(a, act);
       else if (a.startsWith("out")) this._outAct(a, act.dataset.o ?? "");
       else if (a.startsWith("set")) this._setAct(a, act.dataset.o ?? "");
       else if (a === "disc") this._spPlayDisc();
       else if (a === "bypass") { this.S.eq.bypass = !this.S.eq.bypass; this._eqApply(); this._eqPaint(); this._eqSave(); }
-    } else if (spi) this.S.page === "lists" ? this._plPick(+spi.dataset.sp) : this._spPick(+spi.dataset.sp);
+    } else if (rdi) this._rdPick(+rdi.dataset.rd);
+    else if (spi) this.S.page === "lists" ? this._plPick(+spi.dataset.sp) : this._spPick(+spi.dataset.sp);
     else if (tile) {
       if (this._lpFired) { this._lpFired = false; return; }
       const t = TILES.find((x) => x.id === tile.dataset.id);
-      if (t.src) { this._selectSource(t.id); if (t.id === "spotify") this._page("spotify"); }
+      if (t.src) { this._selectSource(t.id); if (t.id === "spotify" || t.id === "radio") this._page(t.id); }
       else if (t.id === "eq") this._page("eq");
       else if (t.id === "lists") this._page("lists");
       else if (t.id === "out") this._page("out");
@@ -828,7 +913,9 @@ class NeonMediaCard extends HTMLElement {
       else if (k === "voldn") this._setVol(this.S.vol - 4);
       else if (k === "back" && this.S.page === "spotify" && this._spNav?.length) this._spUp();
       else if (k === "back" && this.S.page === "lists" && (this._plName || this._plPend || this._plView)) this._plUp();
+      else if (k === "back" && this.S.page === "radio" && this._rdMode === "browse" && !this._rdQ && this._rdNav?.length) this._rdUp();
       else if (this.S.page !== "home") this._page("home");
+      else if (this._cvz) this._coverZoom(false);
       else this._toast(k === "home" ? tx("Accueil") : tx("Retour"));
     } else if (tb) {
       const t = tb.dataset.t;
@@ -850,7 +937,7 @@ class NeonMediaCard extends HTMLElement {
       const r = knob.getBoundingClientRect();
       return Math.atan2(e.clientY - r.top - r.height / 2, e.clientX - r.left - r.width / 2);
     };
-    knob.addEventListener("pointerdown", (e) => { drag = { a: ang(e), v: this.S.vol }; knob.setPointerCapture(e.pointerId); });
+    knob.addEventListener("pointerdown", (e) => { drag = { a: ang(e), v: this.S.vol }; knob.setPointerCapture(e.pointerId); knob.classList.add("grab"); });
     knob.addEventListener("pointermove", (e) => {
       if (!drag) return;
       let d = ang(e) - drag.a;
@@ -860,7 +947,7 @@ class NeonMediaCard extends HTMLElement {
       drag.a = ang(e);
       this._setVol(drag.v);
     });
-    const end = () => { drag = null; };
+    const end = () => { drag = null; knob.classList.remove("grab"); };
     knob.addEventListener("pointerup", end);
     knob.addEventListener("pointercancel", end);
     knob.addEventListener("wheel", (e) => { e.preventDefault(); this._setVol(this.S.vol + (e.deltaY < 0 ? 2 : -2)); }, { passive: false });
@@ -874,6 +961,8 @@ class NeonMediaCard extends HTMLElement {
     const S = this.S;
     S.vol = clamp(Math.round(v), 0, 100);
     this._arc.style.strokeDashoffset = this._ARC * (1 - S.vol / 100);
+    // Le repère du capuchon suit l'anneau : -135° à 0 %, +135° à 100 % (anneau de 270° qui part en bas à gauche).
+    this.$(".knob .cap").style.rotate = (-135 + 2.7 * S.vol) + "deg";
     this.$(".voln").textContent = S.vol;
     this.$(".knob").setAttribute("aria-valuenow", S.vol);
     if (!user) return;
@@ -897,7 +986,8 @@ class NeonMediaCard extends HTMLElement {
     this._scr.classList.toggle("off", !S.on);
     if (!S.on) {
       if (S.src === "spotify") { if (this._spState()?.state === "playing") this._call("media_pause"); }
-      else if (this._rmPlaying()) this._rmCall("media_pause");
+      else if (this._rmPlaying()) this._rmHalt();
+      else if (this._rdLive()) this._rdStop();
       else this._audio?.pause();
     }
   }
@@ -906,14 +996,18 @@ class NeonMediaCard extends HTMLElement {
   _selectSource(id) {
     const S = this.S;
     if (!S.on) this._power();
-    if (S.src !== id && S.src !== "spotify") { this._audio?.pause(); if (this._rmPlaying()) this._rmCall("media_pause"); }
+    if (S.src !== id && S.src !== "spotify") {
+      if (this._rdLive()) this._rdStop(); else this._audio?.pause();
+      if (this._rmPlaying()) this._rmHalt();
+    }
     S.src = id;
     this._playSave();
     this._showSource();
     if (id === "spotify") {
       if (!this._cfg.entity) this._toast(tx("Lecteur Spotify non réglé (éditeur de la carte)"));
       this._syncSpotify(true);
-    } else this._loadLib(id, true);
+    } else if (id === "radio") this._rdFavLoad(); // la station se choisit dans la page, rien ne part seul
+    else this._loadLib(id, true);
   }
 
   _showSource() {
@@ -949,6 +1043,11 @@ class NeonMediaCard extends HTMLElement {
     if (id === "out") return this._outName();
     if (id === "lists") return this._pl?.lists ? this._pl.lists.length + tx(" listes") : tx("Listes et file");
     if (id === "set") return tx("Thème ") + cap(this._cfg.theme) + (Object.keys(this._setLoad()).length ? tx(" · réglé ici") : "");
+    if (id === "radio") {
+      if (this._rdOwn() && S.queue[S.idx]) return S.queue[S.idx].title;
+      const n = this._rdFavs().length;
+      return n + " " + tx(n > 1 ? "favoris" : "favori");
+    }
     return tx("Bientôt");
   }
 
@@ -1105,6 +1204,17 @@ class NeonMediaCard extends HTMLElement {
     this._idleArm();
   }
 
+  // Retour des tuiles : elles arrivent l'une après l'autre (animation CSS .tiles.in, retirée une fois jouée).
+  _tilesIn() {
+    if (REDUCED) return;
+    const nav = this.$(".tiles");
+    nav.classList.remove("in");
+    void nav.offsetWidth;
+    nav.classList.add("in");
+    clearTimeout(this._tinT);
+    this._tinT = setTimeout(() => nav.classList.remove("in"), 1400);
+  }
+
   _dwellStop() {
     clearTimeout(this._dwellT);
     this._dwellT = null;
@@ -1115,6 +1225,7 @@ class NeonMediaCard extends HTMLElement {
     if (!this._built || this._idle === on) return;
     this._idle = on;
     this.$(".ui").classList.toggle("idle", on);
+    if (!on) this._tilesIn();
   }
 
   /* ── touches multimédia du clavier et lecteur du système (Media Session) ── */
@@ -1131,7 +1242,8 @@ class NeonMediaCard extends HTMLElement {
       stop: () => { if (this._playing()) this._playPause(); },
       previoustrack: () => this._step(-1),
       nexttrack: () => this._step(1),
-      seekto: (d) => { if (this._audio && Number.isFinite(d.seekTime)) this._audio.currentTime = d.seekTime; },
+      // Un direct n'a pas de position : sans gestionnaire, le système retire la barre de son lecteur.
+      seekto: this._rdLive() ? null : (d) => { if (this._audio && Number.isFinite(d.seekTime)) this._audio.currentTime = d.seekTime; },
     };
     for (const k of ["play", "pause", "stop", "previoustrack", "nexttrack", "seekto"]) {
       try { ms.setActionHandler(k, h[k] || null); } catch (e) { /* action inconnue de ce navigateur */ }
@@ -1204,7 +1316,19 @@ class NeonMediaCard extends HTMLElement {
       a.addEventListener("ended", () => { if (a === this._audio) this._onEnded(); });
       a.addEventListener("timeupdate", () => this._xfCheck(a));
       a.addEventListener("error", () => this._onError(a));
-      a.addEventListener("playing", () => { this.S.fails = 0; this._msOwn(); this._showSource(); this._presign(); });
+      a.addEventListener("playing", () => {
+        this.S.fails = 0;
+        if (a === this._audio) { this._rdAt = Date.now(); this._rdEver = true; clearTimeout(this._rdWD); clearTimeout(this._rdRT); }
+        this._msOwn();
+        this._showSource();
+        this._presign();
+      });
+      // Flux figé sans erreur ni fin (serveur muet, réseau perdu sans coupure) : relancé après 15 s d'attente.
+      a.addEventListener("waiting", () => {
+        if (a !== this._audio || !this._rdLive()) return;
+        clearTimeout(this._rdWD);
+        this._rdWD = setTimeout(() => { if (a === this._audio && this._rdLive() && !a.paused && a.readyState < 3) this._rdRetry(); }, 15000);
+      });
       a.addEventListener("pause", () => { if (a === this._audio && navigator.mediaSession) navigator.mediaSession.playbackState = "paused"; this._showSource(); });
       return a;
     };
@@ -1273,13 +1397,34 @@ class NeonMediaCard extends HTMLElement {
     });
   }
 
+  // Fondu court (précédent/suivant) : `to` muet jusqu'à ce que sa lecture parte, `from` garde son gain d'ici là.
+  _xfQuick(from, to) {
+    this._xf = null;
+    if (this._auDirect && !this._auDirect.paused) this._auDirect.pause();
+    const t = this._actx.currentTime, g = this._xg[to === this._auWA ? 0 : 1].gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(0, t);
+  }
+
+  _xfRamp(from, to) {
+    const t = this._actx.currentTime, d = Math.min(XQ, this._cfg.crossfade);
+    [[to, 1], [from, 0]].forEach(([a, v]) => {
+      const g = this._xg[a === this._auWA ? 0 : 1].gain;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(g.value, t);
+      g.linearRampToValueAtTime(v, t + d);
+    });
+    clearTimeout(this._xqT);
+    this._xqT = setTimeout(() => { if (from !== this._audio && !from.paused) from.pause(); }, d * 1000 + 80);
+  }
+
   _xfCheck(a) {
     const S = this.S, xf = this._cfg.crossfade;
-    if (!xf || this._xf || a !== this._audio || !this._wa(a) || a.paused || S.src === "spotify" || S.queue.length < 2) return;
+    if (!xf || this._xf || a !== this._audio || !this._wa(a) || a.paused || S.src === "spotify" || S.queue.length < 2 || this._rdLive()) return;
     const dur = a.duration;
     if (!Number.isFinite(dur) || dur < xf * 3 || dur - a.currentTime > xf) return;
     const i = this._nextIdx(1, true);
-    if (i < 0) return;
+    if (i < 0 || S.queue[i].live) return;
     this._xf = { from: a }; // reste posé si le fondu échoue : « ended » enchaîne alors sans fondu
     this._crossTo(a, i).catch((e) => console.warn(TAG + ": fondu", e));
   }
@@ -1350,7 +1495,7 @@ class NeonMediaCard extends HTMLElement {
 
   _presign() {
     const S = this.S;
-    if (!this._resolve || this._rmE() || S.src === "spotify" || S.queue.length < 2 || this._offline()) return;
+    if (!this._resolve || this._rmE() || S.src === "spotify" || S.queue.length < 2 || this._offline() || this._rdLive()) return;
     const next = S.shuffle ? this._shufFill(PRESIGN) : this._rmAhead(S.idx, PRESIGN).map((j) => S.queue[j]);
     for (const t of next) this._resolve(t.id).catch(() => {});
   }
@@ -1480,13 +1625,24 @@ class NeonMediaCard extends HTMLElement {
     });
   }
 
+  _coverZoom(on = !this._cvz) {
+    this._cvz = on;
+    this.$(".ui").classList.toggle("cvz", on);
+    if (on) { clearTimeout(this._idleT); this._setIdle(false); } else this._idleArm();
+    requestAnimationFrame(() => this._mq());
+  }
+
   _page(p) {
     const S = this.S;
     S.page = p;
+    if (p !== "home" && this._cvz) this._coverZoom(false);
     if (p === "home") this._idleArm();
     else { clearTimeout(this._idleT); this._setIdle(false); }
     this.$(".ui").classList.toggle("eqp", p === "eq");
-    this.$(".ui").classList.toggle("spp", p === "spotify" || p === "lists" || p === "out" || p === "set");
+    this.$(".ui").classList.toggle("spp", p === "spotify" || p === "lists" || p === "out" || p === "set" || p === "radio");
+    this.$(".spg").classList.toggle("rd", p === "radio");
+    this.$(".plq").placeholder = p === "radio" ? tx("Chercher une station…") : tx("Chercher : artiste, album, titre…");
+    if (p === "radio") { this._rdOpen(); return; }
     if (p === "out") { this._outOpen(); return; }
     if (p === "set") { this._setOpen(); return; }
     if (p === "spotify") { this._spOpen(); return; }
@@ -1537,43 +1693,66 @@ class NeonMediaCard extends HTMLElement {
   async _playIdx(i) {
     const S = this.S;
     this._connUnwait();
+    clearTimeout(this._rdRT);
+    clearTimeout(this._rdWD);
     if (!S.queue.length) return;
     S.idx = ((i % S.queue.length) + S.queue.length) % S.queue.length;
     const tr = S.queue[S.idx];
+    // Compteurs de reconnexion propres à la station : une autre station repart de zéro.
+    if (tr !== this._rdOf) { this._rdOf = tr; this._rdAt = 0; this._rdTry = 0; this._rdEver = false; }
+    if (tr.live) this._rdKeep(tr);
     if (this._rmE()) { this._xfStop(null); this._showTrack(); this._rmPlay(); return; }
     this._ensureAudio();
     this._ensureGraph();
     this._showTrack();
-    let url;
-    try {
-      this._resolve ||= (await mediaSource()).lazyResolver(() => this._hass);
-      url = await this._resolve(tr.id);
-    } catch (e) {
-      if (this._offline()) { if (S.queue[S.idx] === tr) this._waitConn(tr); }
-      else this._onError(null, e);
-      return;
+    // Flux d'une station : son URL est connue, aucune attente avant de changer d'élément (voir _onError).
+    let url = tr.live ? tr.url : "";
+    if (!url) {
+      try {
+        this._resolve ||= (await mediaSource()).lazyResolver(() => this._hass);
+        url = await this._resolve(tr.id);
+      } catch (e) {
+        if (this._offline()) { if (S.queue[S.idx] === tr) this._waitConn(tr); }
+        else this._onError(null, e);
+        return;
+      }
+      if (S.queue[S.idx] !== tr) return; // un autre titre a été demandé pendant la résolution
     }
-    if (S.queue[S.idx] !== tr) return; // un autre titre a été demandé pendant la résolution
+    this._liveUp = false;
     if (location.protocol === "https:" && url.startsWith("http:")) {
-      this._toast(tx("Bloqué : flux http dans une page https"));
-      return;
+      if (!tr.live) { this._toast(tx("Bloqué : flux http dans une page https")); return; }
+      // Page https : le flux http serait bloqué, sa version https est tentée (Chrome fait de même avec l'audio).
+      url = "https:" + url.slice(5);
+      this._liveUp = true;
     }
     const same = new URL(url, location.href).origin === location.origin;
-    const next = same ? (this._wa(this._audio) ? this._audio : this._auWA) : this._auDirect;
-    this._xfStop(next);
+    // Une station étrangère passe d'abord par Web Audio (égaliseur, vrai spectre) : la plupart envoient l'en-tête CORS.
+    // Sans lui l'élément échoue, l'URL est notée et le flux rejoué sur l'élément direct.
+    if (tr.live) this._liveUrl = url;
+    const cur = this._audio, wa = this._wa(cur) ? cur : this._auWA;
+    // Changement de titre pendant la lecture : fondu court sur l'autre élément Web Audio au lieu d'une coupure.
+    const quick = !tr.live && same && this._cfg.crossfade > 0 && this._xg && this._auWA2 && this._wa(cur) && !cur.paused;
+    const next = quick ? (cur === this._auWA ? this._auWA2 : this._auWA)
+      : tr.live ? (this._noCors?.has(url) ? this._auDirect : wa) : same ? wa : this._auDirect;
+    if (quick) this._xfQuick(cur, next);
+    else this._xfStop(next);
     this._audio = next;
     next.src = url;
     next.volume = S.vol / 100;
     try {
       if (this._actx?.state === "suspended") await this._actx.resume();
       await next.play();
+      if (quick && this._audio === next) this._xfRamp(cur, next);
     } catch (e) {
-      if (e.name !== "AbortError") this._onError(next, e);
+      // Chargement raté : l'élément émet « error » (traité par son écouteur) puis rejette play() en NotSupportedError.
+      // Le traiter aussi ici compterait l'échec deux fois ; element.error ne peut pas trier, load() dans l'écouteur le remet à null.
+      if (e.name !== "AbortError" && e.name !== "NotSupportedError") this._onError(next, e);
     }
   }
 
   _onEnded() {
     const S = this.S;
+    if (this._rdLive()) { this._rdRetry(); return; } // un direct qui « finit » a été coupé
     if (!S.repeat && !S.shuffle && S.idx >= S.queue.length - 1) { this._showSource(); return; }
     this._step(1, true);
   }
@@ -1581,6 +1760,26 @@ class NeonMediaCard extends HTMLElement {
   _onError(a, e) {
     const S = this.S;
     if (a && a !== this._audio) return;
+    if (this._rdLive()) {
+      const url = this._liveUrl, t = S.queue[S.idx].title;
+      // NotAllowedError = lecture refusée faute de geste (autoplay) : ni CORS ni réseau.
+      if (e?.name === "NotAllowedError") { this._toast(tx("Lecture impossible : ") + t); this._showSource(); return; }
+      // La station a déjà joué : coupure réseau, on retente.
+      if (this._rdEver) { this._rdRetry(); return; }
+      // Premier essai sur un élément Web Audio : le serveur n'envoie sans doute pas l'en-tête CORS.
+      if (this._wa(a) && url && !this._noCors?.has(url)) {
+        (this._noCors ||= new Set()).add(url);
+        // URL gardée sur la station : le rejeu change d'élément sans attendre une nouvelle résolution.
+        const tr = S.queue[S.idx];
+        if (!tr.url) tr.url = url;
+        this._playIdx(S.idx);
+        return;
+      }
+      console.warn(TAG + ": station", t, e || a?.error);
+      this._toast(tx(this._liveUp ? "Station injoignable en https : " : "Station injoignable : ") + t);
+      this._showSource();
+      return;
+    }
     console.warn(TAG + ": lecture", S.queue[S.idx]?.title, e || a?.error);
     S.fails++;
     this._toast(tx("Lecture impossible : ") + (S.queue[S.idx]?.title || tx("titre")));
@@ -1595,15 +1794,28 @@ class NeonMediaCard extends HTMLElement {
 
   _showTrack() {
     const S = this.S, tr = S.queue[S.idx];
+    if (S.src === "radio") {
+      const t = this._rdOwn() && tr ? tr : this._rdLast();
+      this._setTitle(t ? t.title : tx("Choisissez une station"));
+      this.$(".artist").textContent = t?.sub || "";
+      const art = t?.thumb || "";
+      this._setCover(art);
+      if (t) this._msMeta(t.title, t.sub || "", tx("Radio"), art || this._cover);
+      this.$(".pp").innerHTML = svg(this._playing() ? "pause" : "play");
+      if (S.page === "lists" && this._plView?.kind === "queue" && !this._plDrag) this._plRows(true);
+      return;
+    }
     const lib = S.libs[S.src];
     const m = tr && this._tagC?.get(tr.id);
     const title = m?.title || (tr ? tr.title.replace(/\.(mp3|flac|ogg|opus|m4a|aac|wav)$/i, "") : lib ? tx("Prêt") : tx("Touchez pour lire"));
     this._setTitle(m?.artist ? m.artist + " - " + title : title);
     this.$(".artist").textContent = lib ? (m?.album || lib.title) + (tr ? " · " + (S.idx + 1) + "/" + S.queue.length : "") : "";
     const art = m?.art || (tr?.thumb ? this._abs(tr.thumb) : "");
-    this._setCover(art);
+    // Tags du titre pas encore lus : l'ancienne pochette reste, le fondu ira droit vers la nouvelle (sans passer par la neutre).
+    if (!tr || m || tr.thumb) this._setCover(art);
     if (tr) this._msMeta(title, m?.artist || lib?.title || "", m?.album || lib?.title || "", art || this._cover);
     if (tr && !m) this._tagsFor(tr);
+    else if (tr) this._tagsAhead();
     this.$(".pp").innerHTML = svg(this._playing() ? "pause" : "play");
     if (S.page === "lists" && this._plView?.kind === "queue" && !this._plDrag) this._plRows(true);
   }
@@ -1611,10 +1823,47 @@ class NeonMediaCard extends HTMLElement {
   /* ── tags et pochette du titre courant : APIC/PICTURE intégré (tags.js), sinon image du dossier ── */
   // Lu à l'affichage du titre, deux requêtes Range au plus : pas de lecture de toute la bibliothèque.
   async _tagsFor(tr) {
-    if (this.S.src === "spotify" || this._tagFor === tr.id) return;
+    if (this.S.src === "spotify" || tr.live || this._tagFor === tr.id) return;
     this._tagFor = tr.id;
     this._tagAb?.abort();
     const ab = (this._tagAb = new AbortController());
+    const m = await this._tagsRead(tr, ab);
+    if (!m) return;
+    if (m.lost && this._tagFor === tr.id) this._tagFor = null;
+    this._tagPut(tr, m);
+    if (this.S.queue[this.S.idx] === tr) this._showTrack();
+  }
+
+  // Titre suivant lu d'avance (pochette, artiste) : il s'affiche dès son départ, y compris sur une sortie déportée.
+  async _tagsAhead() {
+    const S = this.S;
+    if (S.src === "spotify" || S.src === "radio" || S.queue.length < 2 || this._offline()) return;
+    const tr = S.shuffle ? this._shufFill(1)[0] : S.queue[this._rmAhead(S.idx, 1)[0]];
+    if (!tr || tr.live || this._tagC?.has(tr.id) || this._tagPre === tr.id) return;
+    this._tagPre = tr.id;
+    this._tagPreAb?.abort();
+    const ab = (this._tagPreAb = new AbortController());
+    const m = await this._tagsRead(tr, ab);
+    if (this._tagPre === tr.id) this._tagPre = null;
+    if (!m || m.lost || this._tagC?.has(tr.id)) { if (m?.art.startsWith("blob:")) URL.revokeObjectURL(m.art); return; }
+    this._tagPut(tr, m);
+    if (S.queue[S.idx] === tr) this._showTrack();
+  }
+
+  _tagPut(tr, m) {
+    const c = (this._tagC ||= new Map()), was = c.get(tr.id)?.art;
+    // Même titre lu deux fois (d'avance et à son départ) : l'image remplacée est libérée si elle n'est pas affichée.
+    if (was && was !== m.art && was.startsWith("blob:") && this.$(".cover img")?.dataset.src !== was) URL.revokeObjectURL(was);
+    c.set(tr.id, m);
+    while (c.size > TAG_CACHE) {
+      const [k, old] = c.entries().next().value;
+      c.delete(k);
+      if (old.art.startsWith("blob:") && this.$(".cover img")?.dataset.src !== old.art) URL.revokeObjectURL(old.art);
+    }
+  }
+
+  // null = lecture abandonnée (un autre titre a été demandé).
+  async _tagsRead(tr, ab) {
     const m = { title: "", artist: "", album: "", art: "" };
     try {
       if (tr.id.startsWith("media-source://")) {
@@ -1636,16 +1885,8 @@ class NeonMediaCard extends HTMLElement {
       if (this._offline()) m.lost = true;
       else if (!ab.signal.aborted) console.debug(TAG + ": tags", e.message || e);
     }
-    if (ab.signal.aborted) { if (m.art.startsWith("blob:")) URL.revokeObjectURL(m.art); return; }
-    if (m.lost && this._tagFor === tr.id) this._tagFor = null;
-    const c = (this._tagC ||= new Map());
-    c.set(tr.id, m);
-    while (c.size > TAG_CACHE) {
-      const [k, old] = c.entries().next().value;
-      c.delete(k);
-      if (old.art.startsWith("blob:") && this.$(".cover img")?.dataset.src !== old.art) URL.revokeObjectURL(old.art);
-    }
-    if (this.S.queue[this.S.idx] === tr) this._showTrack();
+    if (ab.signal.aborted) { if (m.art.startsWith("blob:")) URL.revokeObjectURL(m.art); return null; }
+    return m;
   }
 
   // Dernier recours : service pyscript.neon_media_cover (Discogs, jeton côté serveur, cache disque).
@@ -1666,11 +1907,30 @@ class NeonMediaCard extends HTMLElement {
     return c.get(key);
   }
 
+  // Nouvelle pochette : l'ancienne reste par-dessus le temps que la nouvelle charge, puis s'efface (fondu enchaîné).
   _setCover(src) {
     const img = this.$(".cover img"), want = src || this._cover;
     if (img.dataset.src === want) return;
     img.dataset.src = want;
-    img.onerror = () => { if (img.src !== this._cover) img.src = this._cover; };
+    const box = img.parentNode;
+    let ghost = null;
+    if (img.complete && img.naturalWidth && !REDUCED) {
+      box.querySelector(".ghost")?.remove();
+      ghost = img.cloneNode();
+      ghost.className = "ghost";
+      ghost.removeAttribute("data-src");
+      box.appendChild(ghost);
+    }
+    const fade = () => {
+      img.onload = img.onerror = null;
+      this._ar.style.setProperty("--cvu", 'url("' + img.src.replace(/"/g, "%22") + '")');
+      if (!ghost) return;
+      // Image déjà en cache : le chargement peut tomber avant le premier rendu du calque, l'effacement partirait de 0.
+      requestAnimationFrame(() => requestAnimationFrame(() => ghost.classList.add("out")));
+      setTimeout(() => ghost.remove(), 900);
+    };
+    img.onload = fade;
+    img.onerror = () => { if (img.src !== this._cover) img.src = this._cover; else fade(); };
     img.src = want;
   }
 
@@ -1688,10 +1948,14 @@ class NeonMediaCard extends HTMLElement {
     const rs = this._rmE() && !this._rmOwn() && !this._rm?.pend ? this._rmSt() : null;
     if (rs?.state === "playing") { this._rmCall("media_pause"); return; }
     if (rs?.state === "paused" && /^https?:/.test(rs.attributes?.media_content_id || "")) { this._rmCall("media_play"); return; }
+    // Source Radio sans file de stations : la dernière écoutée repart, sinon la page des favoris s'ouvre.
+    if (S.src === "radio" && (!this._rdOwn() || !S.queue.length)) { this._rdResume(); return; }
     if (!S.queue.length || (S.queueOf !== S.src && !S.queueOf?.startsWith(S.src + ":"))) { this._loadLib(S.src, true); return; }
     if (this._rmE()) {
       if (this._rm?.pend) return; // lecteur en cours d'allumage
       if (!this._rmOwn()) this._playIdx(Math.max(0, S.idx));
+      // Un direct ne se met pas en pause : il s'arrête, et la lecture renvoie la station.
+      else if (this._rdLive()) { if (this._rmPlaying()) this._rmHalt(); else this._playIdx(S.idx); }
       else this._rmCall(this._rmPlaying() ? "media_pause" : "media_play");
       return;
     }
@@ -1699,7 +1963,8 @@ class NeonMediaCard extends HTMLElement {
     if (this._audio.paused) {
       this._actx?.resume();
       this._audio.play().catch((e) => this._onError(this._audio, e));
-    } else {
+    } else if (this._rdLive()) this._rdStop();
+    else {
       this._xfStop(this._audio);
       this._audio.pause();
     }
@@ -1707,8 +1972,12 @@ class NeonMediaCard extends HTMLElement {
 
   _step(d, auto = false) {
     const S = this.S;
-    if (S.src === "spotify") { this._call(d < 0 ? "media_previous_track" : "media_next_track"); return; }
+    if (S.src === "spotify") { this._call(d < 0 ? "media_previous_track" : "media_next_track"); this._spKick(); return; }
+    // Source Radio sans station en file : la dernière écoutée repart ; une fin de titre d'une autre source ne lance rien.
+    if (S.src === "radio" && (!this._rdOwn() || !S.queue.length)) { if (!auto) this._rdResume(); return; }
     if (!S.queue.length) return;
+    // Stations : précédent/suivant passent à la voisine, sans aléatoire ni retour au début du titre.
+    if (this._rdLive()) { this._playIdx(S.idx + d); return; }
     if (this._rmE() && this._rmOwn()) { this._rmStep(d, auto); return; }
     if (d < 0 && this._audio && this._audio.currentTime > 3) { this._audio.currentTime = 0; return; }
     const i = this._nextIdx(d, auto);
@@ -1716,6 +1985,7 @@ class NeonMediaCard extends HTMLElement {
   }
 
   _seek(f) {
+    if (this.S.src === "radio" || (this.S.src !== "spotify" && this._rdLive())) return;
     if (this.S.src === "spotify") {
       const dur = this._spState()?.attributes?.media_duration;
       if (dur) this._call("media_seek", { seek_position: Math.round(f * dur) });
@@ -1764,6 +2034,9 @@ class NeonMediaCard extends HTMLElement {
     return this._rmOwn() && this._rmSt()?.state === "playing";
   }
 
+  // Un direct s'arrête au lieu de se mettre en pause : le lecteur garderait le flux et reprendrait en retard.
+  _rmHalt() { this._rmCall(this._rdLive() && this._rmHas(MP_STOP) ? "media_stop" : "media_pause"); }
+
   _rmCall(service, data = {}, quiet) {
     const e = this._rmE();
     if (!e) return Promise.resolve(false);
@@ -1799,12 +2072,16 @@ class NeonMediaCard extends HTMLElement {
     this._rm = { e, own: true, cid: "", win: null, last: null, pend: true };
     this._rmAsk = Date.now() + RM_ASK_MS;
     if (this._rmSt().state === "off" && this._rmHas(MP_ON)) {
-      await this._rmCall("turn_on");
-      for (let i = 0; i < 40 && this._rmSt()?.state === "off"; i++) await sleep(250);
+      // Un récepteur Cast en veille met parfois plus de 10 s à lancer son appli : HA lève alors un délai dépassé
+      // alors que l'appareil finit par s'allumer. Seul l'état fait foi, attendu jusqu'à 25 s.
+      await this._hass.callService("media_player", "turn_on", { entity_id: e }).catch(() => {});
+      for (let i = 0; i < 100 && this._rmSt()?.state === "off"; i++) await sleep(250);
       if (tok !== this._rmTok) return;
       if (this._rmSt()?.state === "off") { this._rm.own = this._rm.pend = false; this._toast(this._outName() + tx(" ne s'allume pas")); return; }
     }
     this._rm.pend = false;
+    // Station : un seul flux, sans file ; un id Radio Browser laisse HA donner au lecteur l'URL qu'il sait jouer.
+    if (tr.live) { if (!(await this._rmCall("play_media", { media_content_id: this._rdRemoteId(tr), media_content_type: "music" }))) this._rm.own = false; return; }
     const play = (t, enqueue) => this._rmCall("play_media", { media_content_id: t.id, media_content_type: "music", ...(enqueue ? { enqueue } : {}) });
     if (!this._rmHas(MP_ENQUEUE | MP_NEXT)) { if (!(await play(tr))) this._rm.own = false; return; }
     // File du lecteur : son aléatoire et sa répétition coupés, l'ordre est celui de la carte.
@@ -1907,7 +2184,8 @@ class NeonMediaCard extends HTMLElement {
         else if (R.cid && a.media_content_id && a.media_content_id !== R.cid) R.own = false;
         // Fin du titre : jugée sur la dernière position connue en lecture, l'état d'arrêt la remet souvent à 0.
         // Éteint ou injoignable = geste de quelqu'un : on n'enchaîne pas.
-        if (R.own && prev && st.state !== "playing" && !["off", "unavailable", "unknown"].includes(st.state)) {
+        // Un direct n'a pas de fin : son arrêt vient d'un geste, la station suivante ne part pas seule.
+        if (R.own && prev && !S.queue[S.idx]?.live && st.state !== "playing" && !["off", "unavailable", "unknown"].includes(st.state)) {
           const at = prev.pos + (Date.now() - prev.at) / 1000;
           if (st.state === "idle" || (prev.dur && at >= prev.dur - 4)) { R.last = null; this._step(1, true); }
         }
@@ -2019,7 +2297,7 @@ class NeonMediaCard extends HTMLElement {
     }
     const from = this._rmE(), was = S.src !== "spotify" && (from ? this._rmPlaying() : this._playing());
     if (a === "outbr") {
-      if (from && this._rmPlaying()) this._rmCall("media_pause");
+      if (from && this._rmPlaying()) this._rmHalt();
       try { if (o) localStorage.setItem(TAG + ".sink", o); else localStorage.removeItem(TAG + ".sink"); } catch (e) { /* stockage bloqué */ }
       S.out = "";
       this._rm = null;
@@ -2027,8 +2305,8 @@ class NeonMediaCard extends HTMLElement {
       this._applySink();
     } else if (a === "outrm") {
       if (from === o) return;
-      if (from && this._rmPlaying()) this._rmCall("media_pause");
-      this._audio?.pause();
+      if (from && this._rmPlaying()) this._rmHalt();
+      if (this._rdLive()) this._rdStop(); else this._audio?.pause();
       S.out = o;
       this._rm = null;
       this._rmKey = null;
@@ -2289,6 +2567,300 @@ class NeonMediaCard extends HTMLElement {
     g.scrollTop = 0;
   }
 
+  /* ── page Radio : favoris (pyscript.neon_media_playlists, sinon ce navigateur), recherche et parcours par api.radio-browser.info ── */
+  // Parcours par l'API publique, triée par écoutes et sans flux morts : les dossiers de l'intégration HA sont triés
+  // par nom (2 800 stations FR, 594 langues dont du bruit) ; l'intégration ne sert qu'à l'id envoyé à Sonos.
+  _rdHA() { return !!this._hass?.config?.components?.includes("radio_browser"); }
+  _rdOwn() { return (this.S.queueOf || "").split(":")[0] === "radio"; }
+  _rdLive() { const S = this.S; return !!S.queue[S.idx]?.live; }
+
+  _rdKeep(tr) {
+    this._rdL = { id: tr.id, url: tr.url || "", title: tr.title, sub: tr.sub || "", thumb: tr.thumb || "", hls: !!tr.hls, live: true };
+    try { localStorage.setItem(TAG + ".radio", JSON.stringify(this._rdL)); } catch (e) { /* stockage bloqué */ }
+  }
+  _rdLast() {
+    if (this._rdL === undefined) {
+      this._rdL = null;
+      try { const v = JSON.parse(localStorage.getItem(TAG + ".radio") || "null"); if (v && (v.url || v.id) && v.title) this._rdL = { ...v, hls: v.hls ?? rdHls(v.url), live: true }; } catch (e) { /* stockage bloqué */ }
+    }
+    return this._rdL || this._rdFavs()[0] || null;
+  }
+  _rdLocal() {
+    try { const v = JSON.parse(localStorage.getItem(TAG + ".radios") || "null"); return Array.isArray(v) ? v.filter((x) => x?.title && (x.url || x.id)).map((x) => ({ ...x, hls: x.hls ?? rdHls(x.url), live: true })) : null; }
+    catch (e) { return null; }
+  }
+  _rdFavs() {
+    if (this._rdF) return this._rdF.items;
+    if (this._rdLoc === undefined) this._rdLoc = this._rdLocal(); // null = rien dans ce navigateur
+    return this._rdLoc ?? DEFAULT_RADIOS;
+  }
+
+  // Favoris lus côté HA (null = jamais enregistrés : ceux de ce navigateur, sinon ceux d'origine).
+  _rdFSet(v) {
+    this._rdF = v && Array.isArray(v.items) ? { rev: v.rev ?? null, items: v.items.map(rdRow).filter(Boolean) }
+      : { rev: null, items: this._rdLocal() ?? DEFAULT_RADIOS.map((x) => ({ ...x })) };
+    if (this.S.page === "radio") this._rdRender(true);
+    this._showSource();
+  }
+  async _rdFavLoad() {
+    if (!this._plSvc()) return;
+    const tok = (this._rdFTok = (this._rdFTok || 0) + 1);
+    // Écriture en cours d'abord : le serveur ne garantit pas l'ordre, la lecture rendrait la version d'avant le geste.
+    await this._rdSave;
+    if (tok !== this._rdFTok) return;
+    let r;
+    try { r = await this._plCall({ op: "radios_get" }); } catch (e) { console.warn(TAG + ": favoris radio", e); return; }
+    if (tok !== this._rdFTok || !("radios" in r)) return;
+    this._rdFSet(r.radios);
+  }
+  // Écritures enchaînées : chacune part avec la rev rendue par la précédente ; un conflit recharge la version en place.
+  _rdFavSave() {
+    this._rdFTok = (this._rdFTok || 0) + 1; // un chargement en vol n'écrase plus ce geste
+    if (!this._plSvc()) {
+      try { localStorage.setItem(TAG + ".radios", JSON.stringify(this._rdFavs().map(({ id, url, title, sub, thumb, hls }) => ({ id, url, title, sub, thumb, hls: !!hls })))); }
+      catch (e) { this._toast(tx("Favoris non enregistrés : ") + (e.message || e)); }
+      return;
+    }
+    this._rdSave = (this._rdSave || Promise.resolve()).then(async () => {
+      const F = this._rdF;
+      if (!F) return;
+      try {
+        const r = await this._plCall({ op: "radios_put", radios: { rev: F.rev, items: F.items.map((x) => [x.id, x.url || "", x.title, x.sub || "", x.thumb || ""]) } });
+        if (r.ok) { if (this._rdF === F) F.rev = r.radios?.rev ?? F.rev; return; }
+        if ("radios" in r) { this._rdFSet(r.radios); this._toast(tx("Favoris modifiés ailleurs : rechargés, refaites le geste")); }
+        else this._toast(tx("Favoris non enregistrés : ") + (r.error || "?"));
+      } catch (e) { this._toast(tx("Favoris non enregistrés : ") + (e.message || e)); }
+    });
+  }
+
+  async _rdGet(path, p) {
+    const r = await fetch(RB_API + path + "?" + new URLSearchParams(p),
+      { referrerPolicy: "no-referrer", ...(AbortSignal.timeout ? { signal: AbortSignal.timeout(10000) } : {}) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    if (!Array.isArray(j)) throw new Error(tx("format inattendu"));
+    return j;
+  }
+  _rdFromApi(s) {
+    const url = String(s?.url_resolved || s?.url || "").trim();
+    if (!/^https?:\/\//i.test(url) || !s.stationuuid) return null;
+    const fav = String(s.favicon || "").trim(), codec = s.codec && s.codec !== "UNKNOWN" ? s.codec : "";
+    return { id: this._rdHA() ? RB + "/" + s.stationuuid : url, uuid: s.stationuuid, url, title: String(s.name || "").trim() || url,
+      sub: [s.countrycode, codec, s.bitrate ? s.bitrate + " kb/s" : ""].filter(Boolean).join(" · "),
+      thumb: /^https?:\/\//i.test(fav) ? fav : "", hls: s.hls === 1 || rdHls(url), live: true };
+  }
+  // Noms de langue et de pays traduits par le navigateur ; l'API ne donne qu'un nom anglais.
+  _rdName(type, code, dflt) {
+    try {
+      const D = ((this._rdDN ||= {})[type + LOC()] ||= new Intl.DisplayNames([LOC()], { type }));
+      const n = code && D.of(code);
+      if (n && n.toLowerCase() !== String(code).toLowerCase()) return cap(n);
+    } catch (e) { /* code inconnu ou Intl.DisplayNames absent */ }
+    return cap(String(dflt || code || ""));
+  }
+  _rdRoot() {
+    const cc = String(this._hass?.config?.country || "").toUpperCase();
+    return [
+      ...(/^[A-Z]{2}$/.test(cc) ? [{ folder: true, k: "cc:" + cc, title: tx("Près de chez vous"), sub: this._rdName("region", cc), thumb: RD_FLAG(cc) }] : []),
+      { folder: true, k: "top", title: tx("Populaires") },
+      { folder: true, k: "tags", title: tx("Genres") },
+      { folder: true, k: "langs", title: tx("Langues") },
+      { folder: true, k: "ctry", title: tx("Pays") },
+    ];
+  }
+  // Listes de l'API gardées pour la séance : remonter ou revenir dans un dossier ne refait aucun appel.
+  async _rdLoad(k) {
+    const C = (this._rdC ||= new Map());
+    if (C.has(k)) return C.get(k);
+    const st = async (p) => (await this._rdGet("stations/search", { ...p, hidebroken: "true", order: "clickcount", reverse: "true", limit: SP_MAX }))
+      .map((s) => this._rdFromApi(s)).filter(Boolean);
+    const n = (c) => Number(c?.stationcount) || 0, cnt = (c) => n(c).toLocaleString(LOC()) + " stations";
+    const byT = (a, b) => COLL.compare(a.title, b.title);
+    let items;
+    if (k === "top") items = await st({});
+    else if (k.startsWith("cc:")) items = await st({ countrycode: k.slice(3) });
+    else if (k.startsWith("tag:")) items = await st({ tag: k.slice(4), tagExact: "true" });
+    else if (k.startsWith("lang:")) items = await st({ language: k.slice(5), languageExact: "true" });
+    else if (k === "ctry") items = (await this._rdGet("countries", { hidebroken: "true" }))
+      .filter((c) => /^[a-z]{2}$/i.test(c?.iso_3166_1 || "") && n(c) > 0)
+      .map((c) => { const cc = c.iso_3166_1.toUpperCase(); return { folder: true, k: "cc:" + cc, title: this._rdName("region", cc, c.name), sub: cnt(c), thumb: RD_FLAG(cc) }; }).sort(byT);
+    else {
+      const lang = k === "langs";
+      items = (await this._rdGet(lang ? "languages" : "tags", { order: "stationcount", reverse: "true", hidebroken: "true", limit: 100 }))
+        .filter((c) => c?.name && n(c) > 0)
+        .map((c) => ({ folder: true, k: (lang ? "lang:" : "tag:") + c.name, title: lang ? this._rdName("language", c.iso_639, c.name) : cap(c.name), sub: cnt(c) })).sort(byT);
+    }
+    C.set(k, items);
+    return items;
+  }
+
+  _rdOpen() {
+    this.$(".sphead .kicker").textContent = tx("Radio");
+    this.$('[data-a="spup"]').textContent = tx("‹ Précédent");
+    this.$('[data-a="spall"]').hidden = true;
+    this.$(".plnav").innerHTML = "";
+    const q = this.$(".plq");
+    q.hidden = false;
+    q.value = this._rdQ || "";
+    this.$(".spg").classList.remove("virt");
+    this._rdMode ||= "fav";
+    this._rdNav ||= [];
+    this._rdRender();
+    this._rdFavLoad();
+    if (this._rdQ && this._rdHits?.q !== this._rdQ) this._rdSearch(this._rdQ);
+  }
+  // top : true = défilement gardé, nombre = position à rétablir, sinon en haut.
+  _rdRender(top) {
+    const S = this.S, g = this.$(".spg"), q = this._rdQ || "", H = this._rdHits, browse = !q && this._rdMode === "browse";
+    const node = browse ? this._rdNode : null;
+    const mode = (m, t) => '<button class="chip' + (this._rdMode === m ? " on" : "") + '" data-a="rdmode-' + m + '">' + t + "</button>";
+    this.$(".spsort").innerHTML = q ? "" : mode("fav", tx("Favoris")) + mode("browse", tx("Parcourir"));
+    this.$(".spt").textContent = q ? tx("« ") + q + tx(" »") : browse ? node?.title || tx("Parcourir") : tx("Favoris");
+    this.$('[data-a="spup"]').hidden = !browse || !this._rdNav?.length;
+    // Pendant la frappe, les résultats précédents restent affichés jusqu'aux nouveaux.
+    const items = q ? (H && (H.q === q || H.items.length) ? H.items : null) : browse ? (this._rdBusy ? null : node ? node.items : this._rdRoot()) : this._rdFavs();
+    const F = this._rdFavs(), ids = new Set(F.map((f) => f.id)), urls = new Set(F.map((f) => f.url).filter(Boolean));
+    const fav = (s) => ids.has(s.id) || (!!s.uuid && ids.has(RB + "/" + s.uuid)) || (!!s.url && urls.has(s.url));
+    const cur = S.src === "radio" && this._rdOwn() ? S.queue[S.idx] : null;
+    const L = (this._rdItems = (items || []).slice(0, SP_MAX));
+    const img = (u) => '<img loading="lazy" referrerpolicy="no-referrer" alt="" src="' + esc(u) + '">';
+    let h = L.map((s, i) => {
+      const on = !s.folder && fav(s), t = esc(tx(on ? "Retirer des favoris" : "Ajouter aux favoris"));
+      return '<div class="spi' + (s.folder ? "" : (rdSame(cur, s) ? " cur" : "") + (this._rdPlayable(s) ? "" : " off")) + '" data-rd="' + i + '">' +
+        '<span class="art">' + (s.thumb ? img(s.thumb) : svg(s.folder ? "lists" : "radio")) + '</span><span class="nm">' + esc(s.title) +
+        (s.sub ? "<small>" + esc(s.sub) + "</small>" : "") + "</span>" +
+        (s.folder ? "" : '<button class="rb' + (on ? " on" : "") + '" data-a="rdfav" data-i="' + i + '" title="' + t + '" aria-label="' + t + '">' + svg("star") + "</button>") + "</div>";
+    }).join("");
+    if (!items) h = '<p class="spmsg">' + tx("Chargement…") + "</p>";
+    else if (!L.length) h = '<p class="spmsg">' + (q ? tx("Aucune station pour « ") + esc(q) + tx(" »") : browse ? tx("Rien ici") : tx("Aucun favori : touchez l'étoile d'une station.")) + "</p>";
+    const prev = g.scrollTop;
+    g.classList.add("rows");
+    g.innerHTML = h;
+    g.scrollTop = top === true ? prev : top || 0;
+  }
+  _rdSearch(v) {
+    v = String(v || "").trim();
+    this._rdQ = v;
+    clearTimeout(this._rdST);
+    const tok = (this._rdSTok = (this._rdSTok || 0) + 1);
+    if (!v) { this._rdHits = null; this._rdRender(); return; }
+    this._rdRender(true);
+    this._rdST = setTimeout(async () => {
+      let items = [];
+      try {
+        items = (await this._rdGet("stations/search", { name: v, hidebroken: "true", order: "clickcount", reverse: "true", limit: 100 }))
+          .map((s) => this._rdFromApi(s)).filter(Boolean);
+      } catch (e) { if (tok === this._rdSTok) this._toast(tx("Recherche impossible : radio-browser.info ne répond pas")); }
+      if (tok !== this._rdSTok) return;
+      this._rdHits = { q: v, items };
+      if (this.S.page === "radio") this._rdRender();
+    }, 400);
+  }
+  // HLS : seuls certains navigateurs le lisent sans bibliothèque ; un lecteur de la maison (Sonos) le lit lui-même.
+  _rdPlayable(s) { return !s.hls || !!this._rmE() || (this._hlsOk ??= !!new Audio().canPlayType("application/vnd.apple.mpegurl")); }
+  async _rdBrowse(it) {
+    const tok = (this._rdBTok = (this._rdBTok || 0) + 1), top = this.$(".spg").scrollTop;
+    this._rdBusy = true;
+    this._rdRender();
+    let items = null;
+    try { items = await this._rdLoad(it.k); }
+    catch (e) { if (tok === this._rdBTok) this._toast(tx("Parcours impossible : radio-browser.info ne répond pas")); }
+    if (tok !== this._rdBTok) return;
+    this._rdBusy = false;
+    if (items) { this._rdNav.push({ n: this._rdNode, top }); this._rdNode = { title: it.title, items }; }
+    if (this.S.page === "radio") this._rdRender(items ? 0 : top);
+  }
+  _rdUp() {
+    if (!this._rdNav?.length) return;
+    this._rdBTok = (this._rdBTok || 0) + 1; // un chargement en cours ne doit plus remplacer ce niveau
+    this._rdBusy = false;
+    const { n, top } = this._rdNav.pop();
+    this._rdNode = n;
+    this._rdRender(top);
+  }
+  _rdPick(i) {
+    const S = this.S, it = this._rdItems?.[i];
+    if (!it) return;
+    if (it.folder) { this._rdBrowse(it); return; }
+    if (!this._rdPlayable(it)) { this._toast(tx("Flux HLS : non lu par ce navigateur")); return; }
+    if (S.src === "radio" && this._rdOwn() && rdSame(S.queue[S.idx], it) && this._playing()) { this._page("home"); return; }
+    if (!S.on) this._power();
+    if (S.src !== "radio") {
+      // Pas de pause du lecteur distant : play_media suit aussitôt et la pause pourrait arriver après.
+      if (S.src !== "spotify") { if (this._rdLive()) this._rdStop(); else this._audio?.pause(); }
+      S.src = "radio";
+      this._playSave();
+    }
+    // La liste affichée devient la file : précédent/suivant passent à la station voisine.
+    const L = this._rdItems.filter((x) => !x.folder && this._rdPlayable(x));
+    S.queue = L.map((x) => ({ ...x }));
+    S.queueOf = "radio";
+    S.idx = L.indexOf(it);
+    this._showSource();
+    this._page("home");
+    this._playIdx(S.idx);
+  }
+  _rdFavIdx(st) {
+    const u = st.uuid ? RB + "/" + st.uuid : "";
+    return this._rdFavs().findIndex((f) => f.id === st.id || (!!u && f.id === u) || (!!st.url && f.url === st.url));
+  }
+  _rdAct(a, act) {
+    if (a.startsWith("rdmode-")) {
+      this._rdMode = a.slice(7);
+      clearTimeout(this._rdST);
+      this._rdSTok = (this._rdSTok || 0) + 1;
+      this._rdBTok = (this._rdBTok || 0) + 1;
+      this._rdBusy = false;
+      this._rdQ = ""; this._rdHits = null; this.$(".plq").value = "";
+      this._rdRender();
+      return;
+    }
+    if (a !== "rdfav") return;
+    const st = this._rdItems?.[+act.dataset.i];
+    if (!st || st.folder) return;
+    const L = this._rdFavs().slice(), k = this._rdFavIdx(st);
+    if (k >= 0) L.splice(k, 1);
+    else if (L.length >= RD_MAX) { this._toast(RD_MAX + tx(" favoris au plus")); return; }
+    else L.push({ id: st.id, url: st.url || "", title: st.title, sub: st.sub || "", thumb: st.thumb || "", hls: !!st.hls, live: true });
+    // _rdF reste la liste affichée même si le service a disparu depuis son chargement (_rdFavs le lit en premier).
+    if (this._plSvc() || this._rdF) (this._rdF ||= { rev: null, items: [] }).items = L;
+    else this._rdLoc = L;
+    this._rdFavSave();
+    this._rdRender(true);
+    this._showSource();
+  }
+  _rdStop() {
+    clearTimeout(this._rdRT); clearTimeout(this._rdWD);
+    const a = this._audio; if (!a) return;
+    this._xfStop(a); a.pause();
+    // Un direct en pause garderait la connexion ouverte et reprendrait en retard : on la ferme, la lecture rouvre le flux.
+    a.removeAttribute("src"); a.load(); this._showSource();
+  }
+  _rdRetry() {
+    const S = this.S, tr = S.queue[S.idx];
+    clearTimeout(this._rdRT); clearTimeout(this._rdWD);
+    // Un flux qui a tenu 30 s repart avec un compteur neuf : seules les coupures rapprochées épuisent les essais.
+    if (this._rdAt && Date.now() - this._rdAt > 30000) this._rdTry = 0;
+    this._rdAt = 0;
+    if ((this._rdTry || 0) >= RD_TRIES) { this._rdTry = 0; this._rdStop(); this._toast(tx(this._rdEver ? "Flux interrompu : " : "Station injoignable : ") + (tr?.title || "")); return; }
+    const n = (this._rdTry = (this._rdTry || 0) + 1);
+    // Pas de test _playing() : après une erreur réseau l'élément n'est pas mis en pause.
+    this._rdRT = setTimeout(() => { if (S.on && S.queue[S.idx] === tr && S.src !== "spotify" && !this._rmE()) this._playIdx(S.idx); }, 1000 * n * n);
+  }
+  // Source Radio sans file : la dernière station repart, les favoris derrière elle pour précédent/suivant.
+  // Rien n'est attendu avant la lecture : Safari refuse play() hors du geste.
+  _rdResume() {
+    const S = this.S, last = this._rdLast();
+    if (!last) { this._page("radio"); return; }
+    const q = this._rdFavs().filter((x) => this._rdPlayable(x)).map((x) => ({ ...x }));
+    let i = q.findIndex((x) => rdSame(x, last));
+    if (i < 0) { q.unshift({ ...last }); i = 0; }
+    S.queue = q; S.queueOf = "radio"; S.idx = i;
+    this._showSource();
+    this._playIdx(i);
+  }
+  _rdRemoteId(tr) { return tr.id?.startsWith(RB + "/") && this._rdHA() ? tr.id : tr.url || tr.id; }
+
   /* ── page Playlists : listes enregistrées côté HA (pyscript.neon_media_playlists) et file en cours ── */
   // Une liste = {id, name, rev, tracks:[[media_id, titre, artiste, album]]}. rev : le service refuse
   // une écriture faite sur une version périmée et renvoie celle en place.
@@ -2365,6 +2937,8 @@ class NeonMediaCard extends HTMLElement {
   }
 
   _plToQ(t, img) {
+    // Station rangée dans une liste : elle reste un direct (pas de barre, reconnexion), son URL vient de HA.
+    if (t[0].startsWith(RB + "/")) return { id: t[0], url: "", title: t[1] || this._plBase(t[0]), sub: "", thumb: "", live: true };
     const dir = t[0].slice(0, t[0].lastIndexOf("/")), im = img?.get(dir);
     return { id: t[0], title: t[1] || this._plBase(t[0]), thumb: "", cover: im ? dir + "/" + im : "" };
   }
@@ -2744,7 +3318,7 @@ class NeonMediaCard extends HTMLElement {
     if (!L?.tracks.length) return;
     const img = await this._plImgs();
     if (!S.on) this._power();
-    if (S.src !== "mp3") { if (S.src !== "spotify") this._audio?.pause(); S.src = "mp3"; this._playSave(); }
+    if (S.src !== "mp3") { if (S.src !== "spotify") { if (this._rdLive()) this._rdStop(); else this._audio?.pause(); } S.src = "mp3"; this._playSave(); }
     S.queue = L.tracks.map((t) => this._plToQ(t, img));
     S.queueOf = "mp3:pl:" + L.id;
     if (i < 0) i = S.shuffle ? Math.floor(Math.random() * S.queue.length) : 0;
@@ -2798,12 +3372,30 @@ class NeonMediaCard extends HTMLElement {
     const key = [st?.state, a.media_title, a.media_artist, a.entity_picture, a.volume_level, a.shuffle, a.repeat, a.source].join("|");
     if (!force && key === this._spKey) return;
     this._spKey = key;
+    if (a.media_title !== this._spT) { this._spT = a.media_title; this.$(".np").classList.remove("wait"); }
     this._setTitle(a.media_title || (st ? (st.state === "idle" || st.state === "off" ? tx("Spotify en veille") : "—") : tx("Lecteur introuvable")));
     this.$(".artist").textContent = [a.media_artist, a.media_album_name].filter(Boolean).join(" — ");
     this._setCover(a.entity_picture ? this._abs(a.entity_picture) : "");
     this.$(".pp").innerHTML = svg(st?.state === "playing" ? "pause" : "play");
     if (Number.isFinite(a.volume_level) && Date.now() > (this._volLock || 0)) this._setVol(a.volume_level * 100, false);
     this._showSource();
+  }
+
+  // L'intégration relit Spotify 1 s après l'ordre, souvent trop tôt (l'API rend encore l'ancien titre),
+  // puis seulement au cycle de 30 s : relances update_entity tant que le titre n'a pas changé.
+  _spKick() {
+    const title = () => this._spState()?.attributes?.media_title, was = title();
+    clearTimeout(this._spKickT);
+    this.$(".np").classList.add("wait");
+    const steps = [1800, 3500, 6000, 10000];
+    const go = (i) => {
+      if (title() !== was || i >= steps.length) { this.$(".np").classList.remove("wait"); return; }
+      this._spKickT = setTimeout(() => {
+        if (title() === was && this._hass) this._hass.callService("homeassistant", "update_entity", { entity_id: this._cfg.entity }).catch(() => {});
+        go(i + 1);
+      }, steps[i] - (steps[i - 1] || 0));
+    };
+    go(0);
   }
 
   _spPos() {
@@ -2818,6 +3410,7 @@ class NeonMediaCard extends HTMLElement {
     const S = this.S, lv = this._lv, pk = this._pk, px = this._px;
     const eqp = S.page === "eq", bands = eqp ? this._bandsEq : this._bands;
     const live = S.on && S.src !== "spotify" && this._an && this._wa(this._audio) && this._playing();
+    this._live = live;
     if (live) this._an.getByteFrequencyData(this._fft);
     // Sur la page égaliseur, un spectre simulé ferait croire que l'égaliseur agit : rien plutôt.
     const sim = S.on && !live && !eqp && this._playing();
@@ -2943,12 +3536,19 @@ class NeonMediaCard extends HTMLElement {
   _frame(now) {
     const S = this.S, c = this._cfg, t = now / 1000;
     let pos = 0, dur = 0;
+    // Un direct a une durée infinie dans le navigateur : ni barre ni compte à rebours, le temps d'écoute seul.
+    // Source Radio sans station choisie : la file en place est encore celle d'une autre source, sa position ne compte pas.
+    const idle = S.src === "radio" && !this._rdOwn();
+    const live = idle || (S.src !== "spotify" && this._rdLive());
     if (S.src === "spotify") [pos, dur] = this._spPos();
-    else if (this._rmE()) [pos, dur] = this._rmOwn() ? this._rmPos() : [0, 0];
-    else if (this._audio) { pos = this._audio.currentTime || 0; dur = this._audio.duration || 0; }
+    else if (idle) [pos, dur] = [0, 0];
+    else if (this._rmE()) [pos, dur] = this._rmOwn() && !live ? this._rmPos() : [0, 0];
+    else if (this._audio) { pos = this._audio.currentTime || 0; dur = live ? 0 : this._audio.duration || 0; }
+    if (!Number.isFinite(dur)) dur = 0;
+    if (live !== this._liveOf) { this._liveOf = live; this.$(".prog").classList.toggle("live", live); }
     this.$(".bar i").style.width = (dur ? (100 * pos) / dur : 0) + "%";
-    this.$(".t0").textContent = fmt(pos);
-    this.$(".t1").textContent = dur ? "-" + fmt(dur - pos) : "--:--";
+    this.$(".t0").textContent = live && (this._rmE() || idle) ? "" : fmt(pos);
+    this.$(".t1").textContent = live ? tx("EN DIRECT") : dur ? "-" + fmt(dur - pos) : "--:--";
     const d = new Date(), clock = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
     if (clock !== this._clock) { this.$(".clock").textContent = clock; this._clock = clock; }
     const pp = this._playing() ? "pause" : "play";
@@ -2957,21 +3557,34 @@ class NeonMediaCard extends HTMLElement {
     const gl = this._gl;
     if (!gl || !this._visible || document.hidden) return;
     this._spectrum(t);
+    const dt = Math.min(0.1, Math.max(0, t - (this._lt ?? t)));
+    this._lt = t;
+    // Énergie des graves (8 premières bandes) : l'aurore accélère et s'avive quand ça tape.
+    // Seulement sur un son réellement analysé : le spectre simulé (Spotify, Sonos, Onkyo) battrait un faux tempo.
+    let en = 0;
+    if (this._live) { for (let i = 0; i < 8; i++) en += this._lv[i]; en /= 8; }
+    const e0 = this._en ?? 0;
+    this._en = e0 + (en - e0) * (en > e0 ? 0.25 : 0.04);
+    this._aT = (this._aT ?? t) + dt * (1 + 1.2 * this._en);
+    // Marche/arrêt : ON glisse sur 0,6 s ; le shader replie l'image en ligne puis en point (tube cathodique).
+    const onT = S.on ? 1 : 0;
+    if (REDUCED || this._onV == null) this._onV = onT;
+    else this._onV = onT > this._onV ? Math.min(1, this._onV + dt / 0.6) : Math.max(0, this._onV - dt / 0.6);
     const eqp = S.page === "eq";
     const sr = this._scr.getBoundingClientRect(), pr = (eqp ? this._espec : this._spec).getBoundingClientRect();
     if (!sr.width) return;
     const k = this._cv.width / sr.width, U = this._U;
     gl.viewport(0, 0, this._cv.width, this._cv.height);
     gl.uniform2f(U.R, this._cv.width, this._cv.height);
-    gl.uniform1f(U.T, REDUCED ? 12 : t);
-    gl.uniform1f(U.AUR, c.aurora);
+    gl.uniform1f(U.T, REDUCED ? 12 : this._aT);
+    gl.uniform1f(U.AUR, c.aurora * (1 + 0.6 * this._en));
     gl.uniform1f(U.GLW, c.glow);
-    gl.uniform1f(U.ON, S.on ? 1 : 0);
+    gl.uniform1f(U.ON, this._onV);
     // Page égaliseur : 20 segments, sans reflet sous la base, intensité réglable (banc 2026-11-17).
     gl.uniform1f(U.SPI, eqp ? c.eq_spec : 1);
     gl.uniform1f(U.BASE, eqp ? 0 : 0.3);
     gl.uniform1f(U.NSEG, eqp ? 20 : 14);
-    const [A, A2] = accCols(c.hue, c.hue2, c.vivid);
+    const [A, A2] = this._pal ? accCols(...this._pal) : accCols(c.hue, c.hue2, c.vivid);
     gl.uniform3fv(U.A, A);
     gl.uniform3fv(U.A2, A2);
     gl.uniform4f(U.SP, (pr.left - sr.left) * k, (sr.bottom - pr.bottom) * k, pr.width * k, pr.height * k);
@@ -3066,7 +3679,7 @@ if (!customElements.get(OLD_TAG)) customElements.define(OLD_TAG, class extends N
 (window.customCards = window.customCards || []).push({
   type: TAG,
   name: "Neon Media",
-  description: tx("Façade d'autoradio double DIN : dossier de médias, DLNA et Spotify, spectre WebGL, égaliseur 10 bandes, fondu enchaîné."),
+  description: tx("Façade d'autoradio double DIN : dossier de médias, DLNA, Spotify et webradio, spectre WebGL, égaliseur 10 bandes, fondu enchaîné."),
   preview: false,
 });
 console.info("%c NEON-MEDIA-CARD %c " + VERSION + " ", "background:#0b1a2e;color:#5ab0ff;font-weight:700", "color:#5ab0ff");
